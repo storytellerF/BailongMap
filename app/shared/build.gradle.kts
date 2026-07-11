@@ -50,6 +50,7 @@ kotlin {
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
+            implementation(libs.androidx.datastore.preferences)
             implementation(libs.ktor.clientOkhttp)
         }
         commonMain.dependencies {
