@@ -1,0 +1,14 @@
+{
+  "version": 8,
+  "name": "BailongMap Offline Test",
+  "sources": {},
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#e7eef7"
+      }
+    }
+  ]
+}
