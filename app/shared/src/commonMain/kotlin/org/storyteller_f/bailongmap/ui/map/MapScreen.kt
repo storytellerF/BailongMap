@@ -34,6 +34,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import bailongmap.app.shared.generated.resources.ic_layers
+import bailongmap.app.shared.generated.resources.ic_settings
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -43,6 +45,7 @@ import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.rememberCameraState
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.layers.CircleLayer
+import org.maplibre.compose.layers.FillLayer
 import org.maplibre.compose.location.LocationPuck
 import org.maplibre.compose.location.UserLocationState
 import org.maplibre.compose.location.mostAccurateBearing
@@ -50,6 +53,9 @@ import org.maplibre.compose.location.rememberDefaultLocationProvider
 import org.maplibre.compose.location.rememberDefaultOrientationProvider
 import org.maplibre.compose.location.rememberUserLocationState
 import org.maplibre.compose.map.MaplibreMap
+import org.maplibre.compose.offline.OfflinePackDefinition
+import org.maplibre.compose.offline.rememberOfflineManager
+import org.maplibre.compose.offline.rememberOfflinePacksSource
 import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.GeoJsonOptions
 import org.maplibre.compose.sources.rememberGeoJsonSource
@@ -62,19 +68,27 @@ import org.maplibre.spatialk.geojson.Geometry
 import org.maplibre.spatialk.geojson.Point
 import org.maplibre.spatialk.geojson.Position
 import org.storyteller_f.bailongmap.data.model.Place
+import org.storyteller_f.bailongmap.ui.offline.OfflineCacheSheet
 import org.storyteller_f.bailongmap.ui.place.PlaceDetailSheet
 import org.storyteller_f.bailongmap.ui.search.SearchBarUi
+import org.storyteller_f.bailongmap.ui.settings.MapSettingsSheet
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MapScreen(
     hasLocationPermission: Boolean,
     onRequestLocationPermission: () -> Unit,
+    openedPlace: Place? = null,
+    onOpenedPlaceConsumed: () -> Unit = {},
+    offlineTestStyleUrl: String? = null,
     viewModel: MapViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val offlineSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val offlineManager = rememberOfflineManager()
 
     val cameraState = rememberCameraState(
         firstPosition = CameraPosition(
@@ -87,7 +101,22 @@ fun MapScreen(
     var locationState by remember { mutableStateOf<UserLocationState?>(null) }
 
     var showStyleMenu by remember { mutableStateOf(false) }
-    val styleUrl = MAP_STYLES[uiState.styleIndex].second
+    var showOfflineSheet by remember { mutableStateOf(false) }
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    var isCreatingOfflinePack by remember { mutableStateOf(false) }
+    val styleUrl = offlineTestStyleUrl ?: MAP_STYLES[uiState.styleIndex].second
+
+    LaunchedEffect(openedPlace?.id) {
+        val place = openedPlace ?: return@LaunchedEffect
+        viewModel.onPlaceSelected(place)
+        cameraState.animateTo(
+            CameraPosition(
+                target = Position(latitude = place.lat, longitude = place.lon),
+                zoom = 15.0,
+            )
+        )
+        onOpenedPlaceConsumed()
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         MaplibreMap(
@@ -103,6 +132,15 @@ fun MapScreen(
                 }
             },
         ) {
+            if (uiState.showOfflineRegions && offlineManager.packs.isNotEmpty()) {
+                FillLayer(
+                    id = "offline-packs",
+                    source = rememberOfflinePacksSource(offlineManager.packs),
+                    color = const(MaterialTheme.colorScheme.tertiary),
+                    opacity = const(0.18f),
+                )
+            }
+
             // Search result markers
             val resultsCollection = remember(uiState.searchResults) {
                 buildFeatureCollection(uiState.searchResults)
@@ -112,7 +150,7 @@ fun MapScreen(
                 options = GeoJsonOptions(synchronousUpdate = true),
             )
 
-            if (uiState.searchResults.isNotEmpty()) {
+            if (uiState.showSearchMarkers && uiState.searchResults.isNotEmpty()) {
                 CircleLayer(
                     id = "search-results",
                     source = resultsSource,
@@ -140,7 +178,7 @@ fun MapScreen(
             }
 
             // Location puck — only when permission granted
-            if (hasLocationPermission) {
+            if (hasLocationPermission && uiState.showUserLocation) {
                 val locationProvider = rememberDefaultLocationProvider()
                 val orientationProvider = rememberDefaultOrientationProvider()
                 val state = rememberUserLocationState(locationProvider, orientationProvider)
@@ -219,6 +257,22 @@ fun MapScreen(
                 }
             }
 
+            SmallFloatingActionButton(
+                onClick = { showOfflineSheet = true },
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Icon(painterResource(Res.drawable.ic_layers), contentDescription = "离线地图")
+            }
+
+            SmallFloatingActionButton(
+                onClick = { showSettingsSheet = true },
+                containerColor = MaterialTheme.colorScheme.surface,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ) {
+                Icon(painterResource(Res.drawable.ic_settings), contentDescription = "设置")
+            }
+
             FloatingActionButton(
                 onClick = {
                     if (hasLocationPermission) {
@@ -259,7 +313,54 @@ fun MapScreen(
             isFavorite = place.id in uiState.favorites,
             onDismiss = viewModel::onPlaceDeselected,
             onToggleFavorite = { viewModel.onToggleFavorite(place) },
+            onShare = { viewModel.onSharePlace(place) },
             sheetState = sheetState,
+        )
+    }
+
+    if (showOfflineSheet) {
+        OfflineCacheSheet(
+            offlineManager = offlineManager,
+            currentZoom = cameraState.position.zoom,
+            isCreatingPack = isCreatingOfflinePack,
+            sheetState = offlineSheetState,
+            onDismiss = { showOfflineSheet = false },
+            onError = viewModel::showError,
+            onDownloadVisibleRegion = {
+                coroutineScope.launch {
+                    isCreatingOfflinePack = true
+                    runCatching {
+                        val zoom = cameraState.position.zoom.toInt()
+                        val pack = offlineManager.create(
+                            definition = OfflinePackDefinition.TilePyramid(
+                                styleUrl = styleUrl,
+                                bounds = cameraState.awaitProjection().queryVisibleBoundingBox(),
+                                minZoom = (zoom - 2).coerceAtLeast(0),
+                                maxZoom = (zoom + 2).coerceAtMost(16),
+                            ),
+                            metadata = "离线区域 ${offlineManager.packs.size + 1}".encodeToByteArray(),
+                        )
+                        offlineManager.resume(pack)
+                    }.onFailure {
+                        viewModel.showError("创建离线区域失败")
+                    }
+                    isCreatingOfflinePack = false
+                }
+            },
+        )
+    }
+
+    if (showSettingsSheet) {
+        MapSettingsSheet(
+            uiState = uiState,
+            offlineManager = offlineManager,
+            sheetState = settingsSheetState,
+            onDismiss = { showSettingsSheet = false },
+            onStyleChange = viewModel::onStyleChange,
+            onShowOfflineRegionsChange = viewModel::onShowOfflineRegionsChange,
+            onShowSearchMarkersChange = viewModel::onShowSearchMarkersChange,
+            onShowUserLocationChange = viewModel::onShowUserLocationChange,
+            onError = viewModel::showError,
         )
     }
 }

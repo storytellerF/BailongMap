@@ -1,0 +1,20 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Kotlin / JS tooling
+.kotlin/
+kotlin-js-store/
+node_modules/
+
+# Local machine configuration
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -13,6 +13,7 @@ import org.jetbrains.compose.resources.painterResource
 import bailongmap.app.shared.generated.resources.Res
 import bailongmap.app.shared.generated.resources.ic_favorite_border
 import bailongmap.app.shared.generated.resources.ic_favorite_filled
+import bailongmap.app.shared.generated.resources.ic_share
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -33,6 +34,7 @@ fun PlaceDetailSheet(
     isFavorite: Boolean,
     onDismiss: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onShare: () -> Unit,
     sheetState: SheetState,
 ) {
     ModalBottomSheet(
@@ -67,17 +69,34 @@ fun PlaceDetailSheet(
                 }
             }
             Spacer(Modifier.height(16.dp))
-            FilledTonalButton(
-                onClick = onToggleFavorite,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
-                Icon(
-                    painter = painterResource(if (isFavorite) Res.drawable.ic_favorite_filled else Res.drawable.ic_favorite_border),
-                    contentDescription = null,
-                    modifier = Modifier.size(ButtonDefaults.IconSize),
-                )
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text(if (isFavorite) "已收藏" else "收藏")
+                FilledTonalButton(
+                    onClick = onToggleFavorite,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(
+                        painter = painterResource(if (isFavorite) Res.drawable.ic_favorite_filled else Res.drawable.ic_favorite_border),
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.IconSize),
+                    )
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text(if (isFavorite) "已收藏" else "收藏")
+                }
+                FilledTonalButton(
+                    onClick = onShare,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Icon(
+                        painter = painterResource(Res.drawable.ic_share),
+                        contentDescription = null,
+                        modifier = Modifier.size(ButtonDefaults.IconSize),
+                    )
+                    Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                    Text("分享")
+                }
             }
         }
     }
