@@ -1,0 +1,29 @@
+{
+  "version": 8,
+  "name": "BailongMap Offline Test",
+  "sources": {
+    "test-tiles": {
+      "type": "raster",
+      "tiles": [
+        "http://127.0.0.1:18080/tiles/{z}/{x}/{y}.png"
+      ],
+      "tileSize": 48,
+      "minzoom": 0,
+      "maxzoom": 14
+    }
+  },
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#e7eef7"
+      }
+    },
+    {
+      "id": "test-tiles",
+      "type": "raster",
+      "source": "test-tiles"
+    }
+  ]
+}
