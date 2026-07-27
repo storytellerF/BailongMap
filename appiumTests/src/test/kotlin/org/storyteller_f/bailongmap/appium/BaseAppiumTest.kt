@@ -107,9 +107,9 @@ abstract class BaseAppiumTest {
         runAdb(command, "adb deep link failed")
     }
 
-    protected fun reverseTcpPort(port: Int) {
+    protected fun reverseTcpPort(devicePort: Int, hostPort: Int = devicePort) {
         val command = adbCommand()
-        command += listOf("reverse", "tcp:$port", "tcp:$port")
+        command += listOf("reverse", "tcp:$devicePort", "tcp:$hostPort")
         runAdb(command, "adb reverse failed")
     }
 

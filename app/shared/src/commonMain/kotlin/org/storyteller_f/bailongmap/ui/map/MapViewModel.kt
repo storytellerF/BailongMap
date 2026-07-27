@@ -18,6 +18,7 @@ import org.storyteller_f.bailongmap.data.model.FavoritePlace
 import org.storyteller_f.bailongmap.data.model.Place
 import org.storyteller_f.bailongmap.data.network.NominatimClient
 import org.storyteller_f.bailongmap.data.network.createHttpClient
+import org.storyteller_f.bailongmap.data.settings.createMapSettingsStore
 import org.storyteller_f.bailongmap.platform.createPlaceShareService
 
 val MAP_STYLES = listOf(
@@ -45,6 +46,7 @@ class MapViewModel : ViewModel() {
     private val httpClient = createHttpClient()
     private val nominatimClient = NominatimClient(httpClient)
     private val favoriteStore = createFavoriteStore()
+    private val settingsStore = createMapSettingsStore()
     private val placeShareService = createPlaceShareService()
 
     private val _uiState = MutableStateFlow(MapUiState())
@@ -64,6 +66,18 @@ class MapViewModel : ViewModel() {
                         favoritePlaces = favorites,
                         favorites = favorites.map { favorite -> favorite.place.id }.toSet(),
                     )
+                }
+            }
+            .launchIn(viewModelScope)
+
+        settingsStore.defaultStyleIndex
+            .catch {
+                _uiState.update { state -> state.copy(error = "读取设置失败") }
+                emit(null)
+            }
+            .onEach { index ->
+                if (index != null) {
+                    _uiState.update { it.copy(styleIndex = index.coerceIn(MAP_STYLES.indices)) }
                 }
             }
             .launchIn(viewModelScope)
@@ -104,7 +118,12 @@ class MapViewModel : ViewModel() {
     }
 
     fun onStyleChange(index: Int) {
+        if (index !in MAP_STYLES.indices) return
         _uiState.update { it.copy(styleIndex = index) }
+        viewModelScope.launch {
+            runCatching { settingsStore.setDefaultStyleIndex(index) }
+                .onFailure { showError("保存默认地图样式失败") }
+        }
     }
 
     fun onToggleFavorite(place: Place) {

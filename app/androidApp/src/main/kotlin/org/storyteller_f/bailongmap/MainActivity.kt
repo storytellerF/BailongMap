@@ -2,6 +2,7 @@ package org.storyteller_f.bailongmap
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -65,8 +66,14 @@ class MainActivity : ComponentActivity() {
     private fun Intent?.toPlace(): Place? {
         val uri = this?.data ?: return null
         if (uri.scheme != "bailongmap" || uri.host != "place") return null
-        val lat = uri.getQueryParameter("lat")?.toDoubleOrNull() ?: return null
-        val lon = uri.getQueryParameter("lon")?.toDoubleOrNull() ?: return null
+        val lat = uri.getQueryParameter("lat")
+            ?.toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it in -90.0..90.0 }
+            ?: return null
+        val lon = uri.getQueryParameter("lon")
+            ?.toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it in -180.0..180.0 }
+            ?: return null
         val name = uri.getQueryParameter("name")?.takeIf { it.isNotBlank() } ?: "分享地点"
         val address = uri.getQueryParameter("address")?.takeIf { it.isNotBlank() } ?: "$lat, $lon"
         return Place(
@@ -81,6 +88,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun Intent?.toOfflineTestStyleUrl(): String? {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
         val uri = this?.data ?: return null
         if (uri.scheme != "bailongmap" || uri.host != "offline-test") return null
         return uri.getQueryParameter("styleUrl")?.takeIf { it.isNotBlank() }
