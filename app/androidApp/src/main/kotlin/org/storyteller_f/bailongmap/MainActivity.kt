@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -21,6 +22,7 @@ class MainActivity : ComponentActivity() {
     private var hasLocationPermission by mutableStateOf(false)
     private var openedPlace by mutableStateOf<Place?>(null)
     private var offlineTestStyleUrl by mutableStateOf<String?>(null)
+    private var otpGraphQlUrl by mutableStateOf<String?>(null)
 
     private val requestPermission =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
@@ -37,6 +39,7 @@ class MainActivity : ComponentActivity() {
         ) == PackageManager.PERMISSION_GRANTED
         openedPlace = intent.toPlace()
         offlineTestStyleUrl = intent.toOfflineTestStyleUrl()
+        otpGraphQlUrl = intent.toOtpTestGraphQlUrl() ?: configuredOtpGraphQlUrl()
 
         setContent {
             App(
@@ -44,6 +47,7 @@ class MainActivity : ComponentActivity() {
                 openedPlace = openedPlace,
                 onOpenedPlaceConsumed = { openedPlace = null },
                 offlineTestStyleUrl = offlineTestStyleUrl,
+                otpGraphQlUrl = otpGraphQlUrl,
                 onRequestLocationPermission = {
                     requestPermission.launch(
                         arrayOf(
@@ -61,6 +65,7 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         openedPlace = intent.toPlace()
         intent.toOfflineTestStyleUrl()?.let { offlineTestStyleUrl = it }
+        otpGraphQlUrl = intent.toOtpTestGraphQlUrl() ?: configuredOtpGraphQlUrl()
     }
 
     private fun Intent?.toPlace(): Place? {
@@ -90,7 +95,29 @@ class MainActivity : ComponentActivity() {
     private fun Intent?.toOfflineTestStyleUrl(): String? {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
         val uri = this?.data ?: return null
-        if (uri.scheme != "bailongmap" || uri.host != "offline-test") return null
+        if (
+            uri.scheme != "bailongmap" ||
+            uri.host !in setOf("offline-test", "place")
+        ) {
+            return null
+        }
         return uri.getQueryParameter("styleUrl")?.takeIf { it.isNotBlank() }
     }
+
+    private fun Intent?.toOtpTestGraphQlUrl(): String? {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return null
+        val deepLink = this?.data ?: return null
+        if (deepLink.scheme != "bailongmap" || deepLink.host != "place") return null
+
+        val value = deepLink.getQueryParameter("otpGraphQlUrl") ?: return null
+        val routeUri = Uri.parse(value)
+        return value.takeIf {
+            routeUri.scheme == "http" &&
+                routeUri.host == "127.0.0.1" &&
+                routeUri.port in 1..65535
+        }
+    }
+
+    private fun configuredOtpGraphQlUrl(): String? =
+        BuildConfig.OTP_GRAPHQL_URL.takeIf(String::isNotBlank)
 }

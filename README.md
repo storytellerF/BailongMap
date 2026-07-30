@@ -1,5 +1,28 @@
 This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM), Server.
 
+### Features
+
+- Search for places with OpenStreetMap Nominatim and show results on the map.
+- View place details, save favorites, and share place deep links.
+- Compare multiple journey options and navigate single- or multi-stage trips combining walking,
+  subway, bicycle, public transit, or driving.
+- Switch map styles and download the visible region for offline viewing.
+
+To plan a journey, open a search result, tap **导航**, grant location permission when prompted, and
+select one of the returned options. A multi-stage option shows the active stage, the next stage,
+transfer points, and a differently colored line for each travel mode.
+
+Multimodal planning uses an OpenTripPlanner GTFS GraphQL endpoint. Configure it at build time:
+
+```shell
+./gradlew :app:androidApp:assembleDebug \
+  -Pbailongmap.otpGraphQlUrl=https://your-otp.example/otp/gtfs/v1
+```
+
+The OpenTripPlanner instance needs OSM street data and GTFS data for the supported transit region.
+When the property is omitted, the app falls back to a single driving option from the public OSRM
+demo service.
+
 * [/app/iosApp](./app/iosApp/iosApp) contains an iOS application. Even if you’re sharing your UI with Compose Multiplatform,
   you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
 
@@ -22,7 +45,8 @@ This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM
 
 Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
 
-- Android app: `./gradlew :app:androidApp:assembleDebug`
+- Android app (requires Android 13 / API 33 or newer):
+  `./gradlew :app:androidApp:assembleDebug`
 - Desktop app:
   - Hot reload: `./gradlew :app:desktopApp:hotRun --auto`
   - Standard run: `./gradlew :app:desktopApp:run`
@@ -37,12 +61,18 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
 Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
 
 - Android tests: `./gradlew :app:shared:testAndroidHostTest`
-- Desktop tests: `./gradlew :app:shared:jvmTest`
 - Server tests: `./gradlew :server:test`
-- Web tests:
-  - Wasm target: `./gradlew :app:shared:wasmJsTest`
-  - JS target: `./gradlew :app:shared:jsTest`
-- iOS tests: `./gradlew :app:shared:iosSimulatorArm64Test`
+
+Navigation end-to-end testing requires a connected Android device, a running Appium server, and the
+Android device-lock helper. The test injects mock locations through ADB, selects a three-stage
+walking–subway–bicycle option, automatically advances at transfer points, and restores real
+location afterward. It uses `adb reverse` with local map-style and OpenTripPlanner fixtures, so the
+test does not depend on internet access:
+
+```shell
+appium
+APPIUM_TEST_NAME=navigation ./scripts/appium-test.sh -PappiumTags=navigation
+```
 
 ---
 

@@ -5,6 +5,7 @@ val signKey: String? = System.getenv("storyteller_f_sign_key")
 val signAlias: String? = System.getenv("storyteller_f_sign_alias")
 val signStorePassword: String? = System.getenv("storyteller_f_sign_store_password")
 val signKeyPassword: String? = System.getenv("storyteller_f_sign_key_password")
+val otpGraphQlUrl = providers.gradleProperty("bailongmap.otpGraphQlUrl").orElse("").get()
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -36,6 +37,14 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+        buildConfigField(
+            "String",
+            "OTP_GRAPHQL_URL",
+            "\"${otpGraphQlUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"",
+        )
+    }
+    buildFeatures {
+        buildConfig = true
     }
     packaging {
         resources {
