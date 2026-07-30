@@ -47,14 +47,17 @@ data class JourneyLeg(
 data class JourneyPlan(
     val id: String,
     val legs: List<JourneyLeg>,
+    val durationSeconds: Double = legs.sumOf(JourneyLeg::durationSeconds),
 ) {
     init {
         require(id.isNotBlank()) { "Journey plan id must not be blank" }
         require(legs.isNotEmpty()) { "A journey plan must contain at least one leg" }
+        require(durationSeconds.isFinite() && durationSeconds >= 0.0) {
+            "Journey plan duration must be finite and non-negative"
+        }
     }
 
     val distanceMeters: Double = legs.sumOf(JourneyLeg::distanceMeters)
-    val durationSeconds: Double = legs.sumOf(JourneyLeg::durationSeconds)
     val isMultiStage: Boolean = legs.size > 1
     val transferCount: Int = (legs.size - 1).coerceAtLeast(0)
     val points: List<RoutePoint> = legs.flatMap(JourneyLeg::points)

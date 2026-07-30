@@ -25,6 +25,20 @@ class JourneyPlanTest {
     }
 
     @Test
+    fun preservesExplicitJourneyDuration() {
+        val plan = JourneyPlan(
+            id = "journey-with-waiting",
+            legs = listOf(
+                leg(TravelMode.WALK, 500.0, 300.0),
+                leg(TravelMode.SUBWAY, 8_000.0, 1_200.0),
+            ),
+            durationSeconds = 1_800.0,
+        )
+
+        assertEquals(1_800.0, plan.durationSeconds)
+    }
+
+    @Test
     fun rejectsEmptyJourney() {
         assertFailsWith<IllegalArgumentException> {
             JourneyPlan(id = "empty", legs = emptyList())

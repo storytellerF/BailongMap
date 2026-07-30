@@ -180,6 +180,7 @@ internal fun OtpGraphQlResponse.toJourneyPlans(): List<JourneyPlan> {
         JourneyPlan(
             id = "otp-${index + 1}",
             legs = legs,
+            durationSeconds = itinerary.duration,
         )
     }
 }

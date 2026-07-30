@@ -14,7 +14,7 @@ class OpenTripPlannerClientTest {
                 plan = OtpPlan(
                     itineraries = listOf(
                         OtpItinerary(
-                            duration = 2_100.0,
+                            duration = 2_400.0,
                             legs = listOf(
                                 leg("WALK", "出发点", "地铁站", 500.0, 300.0),
                                 leg(
@@ -47,7 +47,7 @@ class OpenTripPlannerClientTest {
             plans.first().legs.map { it.mode },
         )
         assertEquals("2号线", plans.first().legs[1].routeName)
-        assertEquals(2_100.0, plans.first().durationSeconds)
+        assertEquals(2_400.0, plans.first().durationSeconds)
         assertEquals(TravelMode.WALK, plans[1].legs.single().mode)
     }
 

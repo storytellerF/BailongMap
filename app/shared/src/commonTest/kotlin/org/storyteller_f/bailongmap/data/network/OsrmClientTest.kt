@@ -30,6 +30,7 @@ class OsrmClientTest {
 
         assertEquals(1_250.5, route.distanceMeters)
         assertEquals(320.0, route.durationSeconds)
+        assertEquals(320.0, plan.durationSeconds)
         assertEquals(39.90, route.points.first().latitude)
         assertEquals(116.40, route.points.first().longitude)
         assertEquals(3, route.points.size)
