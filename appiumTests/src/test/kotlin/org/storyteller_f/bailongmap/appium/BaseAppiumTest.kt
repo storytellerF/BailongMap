@@ -21,6 +21,8 @@ import java.util.Base64
 
 abstract class BaseAppiumTest {
     private var isScreenRecording = false
+    private var isMockLocationActive = false
+    private val reversedTcpPorts = mutableSetOf<Int>()
     protected lateinit var driver: AndroidDriver
     protected lateinit var wait: WebDriverWait
 
@@ -54,6 +56,8 @@ abstract class BaseAppiumTest {
     @AfterEach
     fun tearDown(testInfo: TestInfo) {
         saveScreenRecording(testInfo)
+        resetMockLocation()
+        resetReversedTcpPorts()
         if (::driver.isInitialized) {
             driver.quit()
         }
@@ -68,6 +72,9 @@ abstract class BaseAppiumTest {
         wait.until(ExpectedConditions.elementToBeClickable(
             AppiumBy.androidUIAutomator("""new UiSelector().description("$description")"""),
         ))
+
+    protected fun findById(resourceId: String): WebElement =
+        wait.until(ExpectedConditions.elementToBeClickable(AppiumBy.id(resourceId)))
 
     protected fun waitForText(text: String, timeout: Duration = Duration.ofSeconds(30)): Boolean {
         val w = if (timeout.seconds == 30L) wait else WebDriverWait(driver, timeout)
@@ -100,7 +107,7 @@ abstract class BaseAppiumTest {
             "-a",
             "android.intent.action.VIEW",
             "-d",
-            url,
+            shellQuote(url),
             "-n",
             "${appPackage()}/.MainActivity",
         )
@@ -111,6 +118,53 @@ abstract class BaseAppiumTest {
         val command = adbCommand()
         command += listOf("reverse", "tcp:$devicePort", "tcp:$hostPort")
         runAdb(command, "adb reverse failed")
+        reversedTcpPorts += devicePort
+    }
+
+    protected fun setAdbMockLocation(
+        latitude: Double,
+        longitude: Double,
+        accuracyMeters: Double = 3.0,
+    ) {
+        check(latitude.isFinite() && latitude in -90.0..90.0) {
+            "Latitude must be finite and between -90 and 90"
+        }
+        check(longitude.isFinite() && longitude in -180.0..180.0) {
+            "Longitude must be finite and between -180 and 180"
+        }
+        check(accuracyMeters.isFinite() && accuracyMeters >= 0.0) {
+            "Accuracy must be finite and non-negative"
+        }
+
+        val appOpsCommand = adbCommand()
+        appOpsCommand += listOf(
+            "shell",
+            "appops",
+            "set",
+            APPIUM_SETTINGS_PACKAGE,
+            "android:mock_location",
+            "allow",
+        )
+        runAdb(appOpsCommand, "enabling adb mock location failed")
+
+        val locationCommand = adbCommand()
+        locationCommand += listOf(
+            "shell",
+            "am",
+            "start-foreground-service",
+            "-e",
+            "longitude",
+            longitude.toString(),
+            "-e",
+            "latitude",
+            latitude.toString(),
+            "-e",
+            "accuracy",
+            accuracyMeters.toString(),
+            APPIUM_LOCATION_SERVICE,
+        )
+        runAdb(locationCommand, "injecting adb mock location failed")
+        isMockLocationActive = true
     }
 
     private fun adbCommand(): MutableList<String> {
@@ -127,6 +181,46 @@ abstract class BaseAppiumTest {
         val output = process.inputStream.bufferedReader().readText()
         val exitCode = process.waitFor()
         check(exitCode == 0) { "$errorMessage ($exitCode): $output" }
+    }
+
+    private fun resetMockLocation() {
+        if (!isMockLocationActive) return
+
+        val stopServiceCommand = adbCommand()
+        stopServiceCommand += listOf(
+            "shell",
+            "am",
+            "stopservice",
+            APPIUM_LOCATION_SERVICE,
+        )
+        runCatching {
+            runAdb(stopServiceCommand, "stopping adb mock location service failed")
+        }
+
+        val appOpsCommand = adbCommand()
+        appOpsCommand += listOf(
+            "shell",
+            "appops",
+            "set",
+            APPIUM_SETTINGS_PACKAGE,
+            "android:mock_location",
+            "deny",
+        )
+        runCatching {
+            runAdb(appOpsCommand, "resetting adb mock location permission failed")
+        }
+        isMockLocationActive = false
+    }
+
+    private fun resetReversedTcpPorts() {
+        reversedTcpPorts.forEach { devicePort ->
+            val command = adbCommand()
+            command += listOf("reverse", "--remove", "tcp:$devicePort")
+            runCatching {
+                runAdb(command, "removing adb reverse for tcp:$devicePort failed")
+            }
+        }
+        reversedTcpPorts.clear()
     }
 
     protected fun appPackage(): String =
@@ -169,6 +263,13 @@ abstract class BaseAppiumTest {
             .ifBlank { "appium-test" }
 
     companion object {
+        private const val APPIUM_SETTINGS_PACKAGE = "io.appium.settings"
+        private const val APPIUM_LOCATION_SERVICE =
+            "$APPIUM_SETTINGS_PACKAGE/.LocationService"
+
+        private fun shellQuote(value: String): String =
+            "'${value.replace("'", "'\\''")}'"
+
         fun resolveAdbPath(): String {
             val candidates = listOfNotNull(
                 System.getenv("ADB"),
