@@ -13,6 +13,7 @@ import org.jetbrains.compose.resources.painterResource
 import bailongmap.app.shared.generated.resources.Res
 import bailongmap.app.shared.generated.resources.ic_favorite_border
 import bailongmap.app.shared.generated.resources.ic_favorite_filled
+import bailongmap.app.shared.generated.resources.ic_navigation
 import bailongmap.app.shared.generated.resources.ic_share
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,6 +35,7 @@ fun PlaceDetailSheet(
     isFavorite: Boolean,
     onDismiss: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onNavigate: () -> Unit,
     onShare: () -> Unit,
     sheetState: SheetState,
 ) {
@@ -69,6 +71,19 @@ fun PlaceDetailSheet(
                 }
             }
             Spacer(Modifier.height(16.dp))
+            FilledTonalButton(
+                onClick = onNavigate,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(
+                    painter = painterResource(Res.drawable.ic_navigation),
+                    contentDescription = null,
+                    modifier = Modifier.size(ButtonDefaults.IconSize),
+                )
+                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+                Text("导航")
+            }
+            Spacer(Modifier.height(8.dp))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),

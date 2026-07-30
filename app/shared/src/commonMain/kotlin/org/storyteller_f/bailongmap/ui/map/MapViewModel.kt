@@ -3,6 +3,8 @@ package org.storyteller_f.bailongmap.ui.map
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,8 +17,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.storyteller_f.bailongmap.data.favorite.createFavoriteStore
 import org.storyteller_f.bailongmap.data.model.FavoritePlace
+import org.storyteller_f.bailongmap.data.model.JourneyPlan
 import org.storyteller_f.bailongmap.data.model.Place
+import org.storyteller_f.bailongmap.data.model.RoutePoint
+import org.storyteller_f.bailongmap.data.network.JourneyPlanner
 import org.storyteller_f.bailongmap.data.network.NominatimClient
+import org.storyteller_f.bailongmap.data.network.OpenTripPlannerClient
+import org.storyteller_f.bailongmap.data.network.OsrmClient
 import org.storyteller_f.bailongmap.data.network.createHttpClient
 import org.storyteller_f.bailongmap.data.settings.createMapSettingsStore
 import org.storyteller_f.bailongmap.platform.createPlaceShareService
@@ -39,12 +46,18 @@ data class MapUiState(
     val showUserLocation: Boolean = true,
     val isSearching: Boolean = false,
     val isSearchExpanded: Boolean = false,
+    val navigationDestination: Place? = null,
+    val journeyPlans: List<JourneyPlan> = emptyList(),
+    val selectedJourneyPlan: JourneyPlan? = null,
+    val activeJourneyLegIndex: Int = 0,
+    val isJourneyPlanning: Boolean = false,
     val error: String? = null,
 )
 
 class MapViewModel : ViewModel() {
     private val httpClient = createHttpClient()
     private val nominatimClient = NominatimClient(httpClient)
+    private var journeyPlanner: JourneyPlanner = OsrmClient(httpClient)
     private val favoriteStore = createFavoriteStore()
     private val settingsStore = createMapSettingsStore()
     private val placeShareService = createPlaceShareService()
@@ -53,6 +66,7 @@ class MapViewModel : ViewModel() {
     val uiState: StateFlow<MapUiState> = _uiState.asStateFlow()
 
     private val searchQueryFlow = MutableStateFlow("")
+    private var navigationJob: Job? = null
 
     init {
         favoriteStore.favorites
@@ -142,6 +156,98 @@ class MapViewModel : ViewModel() {
             .onFailure { showError("分享失败") }
     }
 
+    fun onNavigationRequested(origin: RoutePoint, destination: Place) {
+        navigationJob?.cancel()
+        navigationJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    selectedPlace = null,
+                    navigationDestination = destination,
+                    journeyPlans = emptyList(),
+                    selectedJourneyPlan = null,
+                    activeJourneyLegIndex = 0,
+                    isJourneyPlanning = true,
+                    error = null,
+                )
+            }
+            try {
+                val plans = journeyPlanner.plans(
+                    origin = origin,
+                    destination = RoutePoint(
+                        latitude = destination.lat,
+                        longitude = destination.lon,
+                    ),
+                )
+                _uiState.update {
+                    it.copy(
+                        journeyPlans = plans,
+                        selectedJourneyPlan = plans.singleOrNull(),
+                        activeJourneyLegIndex = 0,
+                        isJourneyPlanning = false,
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _uiState.update {
+                    it.copy(
+                        navigationDestination = null,
+                        journeyPlans = emptyList(),
+                        selectedJourneyPlan = null,
+                        activeJourneyLegIndex = 0,
+                        isJourneyPlanning = false,
+                        error = "行程规划失败，请检查路由服务或稍后重试",
+                    )
+                }
+            }
+        }
+    }
+
+    internal fun configureJourneyPlanner(otpGraphQlUrl: String?) {
+        navigationJob?.cancel()
+        navigationJob = null
+        journeyPlanner = if (otpGraphQlUrl.isNullOrBlank()) {
+            OsrmClient(httpClient)
+        } else {
+            OpenTripPlannerClient(httpClient, otpGraphQlUrl)
+        }
+    }
+
+    fun onJourneyPlanSelected(planId: String) {
+        val plan = _uiState.value.journeyPlans.find { it.id == planId } ?: return
+        _uiState.update {
+            it.copy(
+                selectedJourneyPlan = plan,
+                activeJourneyLegIndex = 0,
+            )
+        }
+    }
+
+    fun onJourneyLegCompleted() {
+        val state = _uiState.value
+        val plan = state.selectedJourneyPlan ?: return
+        val nextIndex = state.activeJourneyLegIndex + 1
+        if (nextIndex < plan.legs.size) {
+            _uiState.update { it.copy(activeJourneyLegIndex = nextIndex) }
+        } else {
+            onNavigationCancelled()
+        }
+    }
+
+    fun onNavigationCancelled() {
+        navigationJob?.cancel()
+        navigationJob = null
+        _uiState.update {
+            it.copy(
+                navigationDestination = null,
+                journeyPlans = emptyList(),
+                selectedJourneyPlan = null,
+                activeJourneyLegIndex = 0,
+                isJourneyPlanning = false,
+            )
+        }
+    }
+
     fun onShowOfflineRegionsChange(show: Boolean) {
         _uiState.update { it.copy(showOfflineRegions = show) }
     }
@@ -163,6 +269,7 @@ class MapViewModel : ViewModel() {
     }
 
     override fun onCleared() {
+        navigationJob?.cancel()
         super.onCleared()
         httpClient.close()
     }

@@ -12,6 +12,7 @@ fun App(
     openedPlace: Place? = null,
     onOpenedPlaceConsumed: () -> Unit = {},
     offlineTestStyleUrl: String? = null,
+    otpGraphQlUrl: String? = null,
 ) {
     MaterialTheme {
         MapScreen(
@@ -20,6 +21,7 @@ fun App(
             openedPlace = openedPlace,
             onOpenedPlaceConsumed = onOpenedPlaceConsumed,
             offlineTestStyleUrl = offlineTestStyleUrl,
+            otpGraphQlUrl = otpGraphQlUrl,
         )
     }
 }

@@ -3,6 +3,7 @@ package org.storyteller_f.bailongmap.ui.map
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,12 +27,14 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -47,8 +50,10 @@ import org.maplibre.compose.camera.rememberCameraState
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.FillLayer
+import org.maplibre.compose.layers.LineLayer
+import org.maplibre.compose.expressions.value.LineCap
+import org.maplibre.compose.expressions.value.LineJoin
 import org.maplibre.compose.location.LocationPuck
-import org.maplibre.compose.location.UserLocationState
 import org.maplibre.compose.location.mostAccurateBearing
 import org.maplibre.compose.location.rememberDefaultLocationProvider
 import org.maplibre.compose.location.rememberDefaultOrientationProvider
@@ -66,9 +71,17 @@ import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.spatialk.geojson.FeatureCollection
 import org.maplibre.spatialk.geojson.Geometry
+import org.maplibre.spatialk.geojson.BoundingBox
+import org.maplibre.spatialk.geojson.LineString
 import org.maplibre.spatialk.geojson.Point
 import org.maplibre.spatialk.geojson.Position
+import org.storyteller_f.bailongmap.data.model.JourneyLeg
+import org.storyteller_f.bailongmap.data.model.JourneyPlan
 import org.storyteller_f.bailongmap.data.model.Place
+import org.storyteller_f.bailongmap.data.model.RoutePoint
+import org.storyteller_f.bailongmap.data.model.TravelMode
+import org.storyteller_f.bailongmap.ui.navigation.JourneyNavigationCard
+import org.storyteller_f.bailongmap.ui.navigation.JourneyOptionsCard
 import org.storyteller_f.bailongmap.ui.offline.OfflineCacheSheet
 import org.storyteller_f.bailongmap.ui.place.PlaceDetailSheet
 import org.storyteller_f.bailongmap.ui.search.SearchBarUi
@@ -82,6 +95,7 @@ fun MapScreen(
     openedPlace: Place? = null,
     onOpenedPlaceConsumed: () -> Unit = {},
     offlineTestStyleUrl: String? = null,
+    otpGraphQlUrl: String? = null,
     viewModel: MapViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -90,6 +104,13 @@ fun MapScreen(
     val offlineSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val offlineManager = rememberOfflineManager()
+    val locationState = if (hasLocationPermission) {
+        val locationProvider = rememberDefaultLocationProvider()
+        val orientationProvider = rememberDefaultOrientationProvider()
+        rememberUserLocationState(locationProvider, orientationProvider)
+    } else {
+        null
+    }
 
     val cameraState = rememberCameraState(
         firstPosition = CameraPosition(
@@ -98,14 +119,18 @@ fun MapScreen(
         )
     )
 
-    // Holds location state once permission is granted (hoisted from map content block)
-    var locationState by remember { mutableStateOf<UserLocationState?>(null) }
+    var pendingNavigationDestination by remember { mutableStateOf<Place?>(null) }
+    val currentLocation = locationState?.location?.position?.value
 
     var showStyleMenu by remember { mutableStateOf(false) }
     var showOfflineSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var isCreatingOfflinePack by remember { mutableStateOf(false) }
     val styleUrl = offlineTestStyleUrl ?: MAP_STYLES[uiState.styleIndex].second
+
+    LaunchedEffect(otpGraphQlUrl) {
+        viewModel.configureJourneyPlanner(otpGraphQlUrl)
+    }
 
     LaunchedEffect(openedPlace?.id) {
         val place = openedPlace ?: return@LaunchedEffect
@@ -117,6 +142,48 @@ fun MapScreen(
             )
         )
         onOpenedPlaceConsumed()
+    }
+
+    LaunchedEffect(uiState.selectedJourneyPlan) {
+        uiState.selectedJourneyPlan?.let { plan ->
+            cameraState.animateTo(
+                boundingBox = plan.boundingBox(),
+                padding = PaddingValues(48.dp),
+            )
+        }
+    }
+
+    LaunchedEffect(
+        hasLocationPermission,
+        currentLocation,
+        pendingNavigationDestination?.id,
+    ) {
+        val destination = pendingNavigationDestination ?: return@LaunchedEffect
+        val position = currentLocation
+        if (!hasLocationPermission || position == null) return@LaunchedEffect
+
+        pendingNavigationDestination = null
+        viewModel.onNavigationRequested(
+            origin = RoutePoint(
+                latitude = position.latitude,
+                longitude = position.longitude,
+            ),
+            destination = destination,
+        )
+    }
+
+    LaunchedEffect(
+        currentLocation,
+        uiState.selectedJourneyPlan?.id,
+        uiState.activeJourneyLegIndex,
+    ) {
+        val location = currentLocation ?: return@LaunchedEffect
+        val plan = uiState.selectedJourneyPlan ?: return@LaunchedEffect
+        val activeLeg = plan.legs.getOrNull(uiState.activeJourneyLegIndex)
+            ?: return@LaunchedEffect
+        if (location.distanceMetersTo(activeLeg.points.last()) <= LEG_COMPLETION_DISTANCE_METERS) {
+            viewModel.onJourneyLegCompleted()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -140,6 +207,38 @@ fun MapScreen(
                     color = const(MaterialTheme.colorScheme.tertiary),
                     opacity = const(0.18f),
                 )
+            }
+
+            uiState.selectedJourneyPlan?.let { plan ->
+                plan.legs.forEachIndexed { index, leg ->
+                    key(plan.id, index) {
+                        val routeCollection = remember(leg) {
+                            buildJourneyLegFeatureCollection(leg, index)
+                        }
+                        val routeSource = rememberGeoJsonSource(
+                            data = GeoJsonData.Features(routeCollection),
+                            options = GeoJsonOptions(synchronousUpdate = true),
+                        )
+                        LineLayer(
+                            id = "journey-leg-$index-casing",
+                            source = routeSource,
+                            color = const(Color.White),
+                            width = const(8.dp),
+                            cap = const(LineCap.Round),
+                            join = const(LineJoin.Round),
+                        )
+                        LineLayer(
+                            id = "journey-leg-$index",
+                            source = routeSource,
+                            color = const(leg.mode.routeColor()),
+                            width = const(
+                                if (index == uiState.activeJourneyLegIndex) 6.dp else 5.dp
+                            ),
+                            cap = const(LineCap.Round),
+                            join = const(LineJoin.Round),
+                        )
+                    }
+                }
             }
 
             // Search result markers
@@ -178,20 +277,16 @@ fun MapScreen(
                 )
             }
 
-            // Location puck — only when permission granted
-            if (hasLocationPermission && uiState.showUserLocation) {
-                val locationProvider = rememberDefaultLocationProvider()
-                val orientationProvider = rememberDefaultOrientationProvider()
-                val state = rememberUserLocationState(locationProvider, orientationProvider)
-
-                LaunchedEffect(state) { locationState = state }
-
-                LocationPuck(
-                    idPrefix = "user",
-                    location = state.location,
-                    bearing = state.mostAccurateBearing(),
-                    cameraState = cameraState,
-                )
+            // Keep location available for navigation even when the puck is hidden.
+            locationState?.let { state ->
+                if (uiState.showUserLocation) {
+                    LocationPuck(
+                        idPrefix = "user",
+                        location = state.location,
+                        bearing = state.mostAccurateBearing(),
+                        cameraState = cameraState,
+                    )
+                }
             }
         }
 
@@ -293,12 +388,42 @@ fun MapScreen(
             }
         }
 
+        uiState.navigationDestination?.let { destination ->
+            val modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(start = 16.dp, end = 88.dp, bottom = 24.dp)
+            val selectedPlan = uiState.selectedJourneyPlan
+            if (selectedPlan == null) {
+                JourneyOptionsCard(
+                    destination = destination,
+                    plans = uiState.journeyPlans,
+                    isLoading = uiState.isJourneyPlanning,
+                    onSelect = viewModel::onJourneyPlanSelected,
+                    onCancel = viewModel::onNavigationCancelled,
+                    modifier = modifier,
+                )
+            } else {
+                JourneyNavigationCard(
+                    destination = destination,
+                    plan = selectedPlan,
+                    activeLegIndex = uiState.activeJourneyLegIndex,
+                    onNextLeg = viewModel::onJourneyLegCompleted,
+                    onCancel = viewModel::onNavigationCancelled,
+                    modifier = modifier,
+                )
+            }
+        }
+
         // Error snackbar
         uiState.error?.let { error ->
             Snackbar(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(16.dp),
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        bottom = if (uiState.navigationDestination == null) 16.dp else 112.dp,
+                    ),
                 dismissAction = {
                     TextButton(onClick = viewModel::clearError) { Text("关闭") }
                 },
@@ -315,6 +440,25 @@ fun MapScreen(
             isFavorite = place.id in uiState.favorites,
             onDismiss = viewModel::onPlaceDeselected,
             onToggleFavorite = { viewModel.onToggleFavorite(place) },
+            onNavigate = {
+                if (!hasLocationPermission) {
+                    pendingNavigationDestination = place
+                    onRequestLocationPermission()
+                } else {
+                    val position = currentLocation
+                    if (position == null) {
+                        viewModel.showError("正在获取当前位置，请稍后重试")
+                    } else {
+                        viewModel.onNavigationRequested(
+                            origin = RoutePoint(
+                                latitude = position.latitude,
+                                longitude = position.longitude,
+                            ),
+                            destination = place,
+                        )
+                    }
+                }
+            },
             onShare = { viewModel.onSharePlace(place) },
             sheetState = sheetState,
         )
@@ -381,3 +525,66 @@ private fun buildFeatureCollection(places: List<Place>): FeatureCollection<Geome
             ) as Feature<Geometry, JsonObject>
         }
     )
+
+@Suppress("UNCHECKED_CAST")
+private fun buildJourneyLegFeatureCollection(
+    leg: JourneyLeg,
+    index: Int,
+): FeatureCollection<Geometry, JsonObject> =
+    FeatureCollection(
+        listOf(
+            Feature(
+                id = JsonPrimitive("journey-leg-$index"),
+                geometry = LineString(
+                    leg.points.map { point ->
+                        Position(longitude = point.longitude, latitude = point.latitude)
+                    }
+                ),
+                properties = buildJsonObject {
+                    put("mode", leg.mode.name)
+                    put("distance", leg.distanceMeters)
+                    put("duration", leg.durationSeconds)
+                },
+            ) as Feature<Geometry, JsonObject>
+        )
+    )
+
+private fun JourneyPlan.boundingBox(): BoundingBox {
+    val west = points.minOf { it.longitude }
+    val east = points.maxOf { it.longitude }
+    val south = points.minOf { it.latitude }
+    val north = points.maxOf { it.latitude }
+    val longitudePadding = if (west == east) 0.001 else 0.0
+    val latitudePadding = if (south == north) 0.001 else 0.0
+    return BoundingBox(
+        west - longitudePadding,
+        south - latitudePadding,
+        east + longitudePadding,
+        north + latitudePadding,
+    )
+}
+
+private fun TravelMode.routeColor(): Color = when (this) {
+    TravelMode.WALK -> Color(0xFF616161)
+    TravelMode.SUBWAY -> Color(0xFF7B1FA2)
+    TravelMode.BICYCLE -> Color(0xFF00897B)
+    TravelMode.TRANSIT -> Color(0xFF1565C0)
+    TravelMode.CAR -> Color(0xFF5E35B1)
+}
+
+private fun Position.distanceMetersTo(point: RoutePoint): Double {
+    val latitudeRadians = latitude.toRadians()
+    val pointLatitudeRadians = point.latitude.toRadians()
+    val latitudeDelta = pointLatitudeRadians - latitudeRadians
+    val longitudeDelta = (point.longitude - longitude).toRadians()
+    val haversine = kotlin.math.sin(latitudeDelta / 2).let { it * it } +
+        kotlin.math.cos(latitudeRadians) *
+        kotlin.math.cos(pointLatitudeRadians) *
+        kotlin.math.sin(longitudeDelta / 2).let { it * it }
+    return 2 * EARTH_RADIUS_METERS * kotlin.math.asin(kotlin.math.sqrt(haversine))
+}
+
+private fun Double.toRadians(): Double = this * kotlin.math.PI / 180.0
+
+private const val EARTH_RADIUS_METERS = 6_371_000.0
+private const val LEG_COMPLETION_DISTANCE_METERS = 45.0
