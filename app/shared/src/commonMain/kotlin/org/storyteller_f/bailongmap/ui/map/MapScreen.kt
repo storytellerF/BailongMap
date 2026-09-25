@@ -26,6 +26,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -46,27 +48,28 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.maplibre.compose.camera.CameraPosition
-import org.maplibre.compose.camera.rememberCameraState
 import org.maplibre.compose.expressions.dsl.const
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.FillLayer
 import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.expressions.value.LineCap
 import org.maplibre.compose.expressions.value.LineJoin
+import org.maplibre.compose.interaction.ClickResult
+import org.maplibre.compose.interaction.MapInteractions
 import org.maplibre.compose.location.LocationPuck
-import org.maplibre.compose.location.mostAccurateBearing
+import org.maplibre.compose.location.rememberDefaultHeadingProvider
 import org.maplibre.compose.location.rememberDefaultLocationProvider
-import org.maplibre.compose.location.rememberDefaultOrientationProvider
-import org.maplibre.compose.location.rememberUserLocationState
+import org.maplibre.compose.location.rememberLocationState
+import org.maplibre.compose.map.DefaultMapRuntime
+import org.maplibre.compose.map.LocalMapState
 import org.maplibre.compose.map.MaplibreMap
+import org.maplibre.compose.map.rememberMapState
 import org.maplibre.compose.offline.OfflinePackDefinition
-import org.maplibre.compose.offline.rememberOfflineManager
 import org.maplibre.compose.offline.rememberOfflinePacksSource
 import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.GeoJsonOptions
 import org.maplibre.compose.sources.rememberGeoJsonSource
 import org.maplibre.compose.style.BaseStyle
-import org.maplibre.compose.util.ClickResult
 import org.maplibre.spatialk.geojson.Feature
 import org.maplibre.spatialk.geojson.Feature.Companion.getStringProperty
 import org.maplibre.spatialk.geojson.FeatureCollection
@@ -103,30 +106,122 @@ fun MapScreen(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val offlineSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settingsSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val offlineManager = rememberOfflineManager()
+    val offlineManager = DefaultMapRuntime.instance.offlineManager
+    val offlinePacks by offlineManager.packs.collectAsState()
+    val pixelRatio = LocalDensity.current.density
     val locationState = if (hasLocationPermission) {
         val locationProvider = rememberDefaultLocationProvider()
-        val orientationProvider = rememberDefaultOrientationProvider()
-        rememberUserLocationState(locationProvider, orientationProvider)
+        val headingProvider = rememberDefaultHeadingProvider()
+        rememberLocationState(
+            provider = locationProvider,
+            headingProvider = headingProvider,
+        )
     } else {
         null
     }
 
-    val cameraState = rememberCameraState(
-        firstPosition = CameraPosition(
-            target = Position(latitude = 39.9042, longitude = 116.4074),
-            zoom = 10.0,
-        )
-    )
-
     var pendingNavigationDestination by remember { mutableStateOf<Place?>(null) }
-    val currentLocation = locationState?.location?.position?.value
+    val currentLocation = locationState?.lastLocation?.position
 
     var showStyleMenu by remember { mutableStateOf(false) }
     var showOfflineSheet by remember { mutableStateOf(false) }
     var showSettingsSheet by remember { mutableStateOf(false) }
     var isCreatingOfflinePack by remember { mutableStateOf(false) }
     val styleUrl = offlineTestStyleUrl ?: MAP_STYLES[uiState.styleIndex].second
+    val mapState = rememberMapState(
+        baseStyle = BaseStyle.Uri(styleUrl),
+        initialCameraPosition = CameraPosition(
+            target = Position(latitude = 39.9042, longitude = 116.4074),
+            zoom = 10.0,
+        ),
+    ) {
+        val currentMapState = checkNotNull(LocalMapState.current)
+
+        if (uiState.showOfflineRegions && offlinePacks.isNotEmpty()) {
+            FillLayer(
+                id = "offline-packs",
+                source = rememberOfflinePacksSource(offlinePacks),
+                color = const(MaterialTheme.colorScheme.tertiary),
+                opacity = const(0.18f),
+            )
+        }
+
+        uiState.selectedJourneyPlan?.let { plan ->
+            plan.legs.forEachIndexed { index, leg ->
+                key(plan.id, index) {
+                    val routeCollection = remember(leg) {
+                        buildJourneyLegFeatureCollection(leg, index)
+                    }
+                    val routeSource = rememberGeoJsonSource(
+                        data = GeoJsonData.Features(routeCollection),
+                        options = GeoJsonOptions(synchronousUpdate = true),
+                    )
+                    LineLayer(
+                        id = "journey-leg-$index-casing",
+                        source = routeSource,
+                        color = const(Color.White),
+                        width = const(8.dp),
+                        cap = const(LineCap.Round),
+                        join = const(LineJoin.Round),
+                    )
+                    LineLayer(
+                        id = "journey-leg-$index",
+                        source = routeSource,
+                        color = const(leg.mode.routeColor()),
+                        width = const(
+                            if (index == uiState.activeJourneyLegIndex) 6.dp else 5.dp
+                        ),
+                        cap = const(LineCap.Round),
+                        join = const(LineJoin.Round),
+                    )
+                }
+            }
+        }
+
+        val resultsCollection = remember(uiState.searchResults) {
+            buildFeatureCollection(uiState.searchResults)
+        }
+        val resultsSource = rememberGeoJsonSource(
+            data = GeoJsonData.Features(resultsCollection),
+            options = GeoJsonOptions(synchronousUpdate = true),
+        )
+
+        if (uiState.showSearchMarkers && uiState.searchResults.isNotEmpty()) {
+            CircleLayer(
+                id = "search-results",
+                source = resultsSource,
+                radius = const(9.dp),
+                color = const(MaterialTheme.colorScheme.primary),
+                strokeWidth = const(2.dp),
+                strokeColor = const(MaterialTheme.colorScheme.onPrimary),
+                onClick = { features ->
+                    val id = features.firstOrNull()?.getStringProperty("id")
+                    val place = viewModel.uiState.value.searchResults.find { it.id == id }
+                    if (place != null) {
+                        viewModel.onPlaceSelected(place)
+                        coroutineScope.launch {
+                            currentMapState.animateCameraPosition(
+                                CameraPosition(
+                                    target = Position(latitude = place.lat, longitude = place.lon),
+                                    zoom = maxOf(currentMapState.cameraPosition.zoom, 14.0),
+                                )
+                            )
+                        }
+                    }
+                    ClickResult.Consume
+                },
+            )
+        }
+
+        locationState?.let { state ->
+            if (uiState.showUserLocation) {
+                LocationPuck(
+                    idPrefix = "user",
+                    locationState = state,
+                )
+            }
+        }
+    }
 
     LaunchedEffect(otpGraphQlUrl) {
         viewModel.configureJourneyPlanner(otpGraphQlUrl)
@@ -135,7 +230,7 @@ fun MapScreen(
     LaunchedEffect(openedPlace?.id) {
         val place = openedPlace ?: return@LaunchedEffect
         viewModel.onPlaceSelected(place)
-        cameraState.animateTo(
+        mapState.animateCameraPosition(
             CameraPosition(
                 target = Position(latitude = place.lat, longitude = place.lon),
                 zoom = 15.0,
@@ -146,7 +241,7 @@ fun MapScreen(
 
     LaunchedEffect(uiState.selectedJourneyPlan) {
         uiState.selectedJourneyPlan?.let { plan ->
-            cameraState.animateTo(
+            mapState.animateCameraToBounds(
                 boundingBox = plan.boundingBox(),
                 padding = PaddingValues(48.dp),
             )
@@ -188,107 +283,23 @@ fun MapScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         MaplibreMap(
-            cameraState = cameraState,
-            baseStyle = BaseStyle.Uri(styleUrl),
+            state = mapState,
             modifier = Modifier.fillMaxSize(),
-            onMapClick = { _, _ ->
-                if (uiState.selectedPlace != null) {
-                    viewModel.onPlaceDeselected()
-                    ClickResult.Consume
-                } else {
-                    ClickResult.Pass
-                }
-            },
-        ) {
-            if (uiState.showOfflineRegions && offlineManager.packs.isNotEmpty()) {
-                FillLayer(
-                    id = "offline-packs",
-                    source = rememberOfflinePacksSource(offlineManager.packs),
-                    color = const(MaterialTheme.colorScheme.tertiary),
-                    opacity = const(0.18f),
-                )
-            }
-
-            uiState.selectedJourneyPlan?.let { plan ->
-                plan.legs.forEachIndexed { index, leg ->
-                    key(plan.id, index) {
-                        val routeCollection = remember(leg) {
-                            buildJourneyLegFeatureCollection(leg, index)
-                        }
-                        val routeSource = rememberGeoJsonSource(
-                            data = GeoJsonData.Features(routeCollection),
-                            options = GeoJsonOptions(synchronousUpdate = true),
-                        )
-                        LineLayer(
-                            id = "journey-leg-$index-casing",
-                            source = routeSource,
-                            color = const(Color.White),
-                            width = const(8.dp),
-                            cap = const(LineCap.Round),
-                            join = const(LineJoin.Round),
-                        )
-                        LineLayer(
-                            id = "journey-leg-$index",
-                            source = routeSource,
-                            color = const(leg.mode.routeColor()),
-                            width = const(
-                                if (index == uiState.activeJourneyLegIndex) 6.dp else 5.dp
-                            ),
-                            cap = const(LineCap.Round),
-                            join = const(LineJoin.Round),
-                        )
-                    }
-                }
-            }
-
-            // Search result markers
-            val resultsCollection = remember(uiState.searchResults) {
-                buildFeatureCollection(uiState.searchResults)
-            }
-            val resultsSource = rememberGeoJsonSource(
-                data = GeoJsonData.Features(resultsCollection),
-                options = GeoJsonOptions(synchronousUpdate = true),
-            )
-
-            if (uiState.showSearchMarkers && uiState.searchResults.isNotEmpty()) {
-                CircleLayer(
-                    id = "search-results",
-                    source = resultsSource,
-                    radius = const(9.dp),
-                    color = const(MaterialTheme.colorScheme.primary),
-                    strokeWidth = const(2.dp),
-                    strokeColor = const(MaterialTheme.colorScheme.onPrimary),
-                    onClick = { features ->
-                        val id = features.firstOrNull()?.getStringProperty("id")
-                        val place = viewModel.uiState.value.searchResults.find { it.id == id }
-                        if (place != null) {
-                            viewModel.onPlaceSelected(place)
-                            coroutineScope.launch {
-                                cameraState.animateTo(
-                                    CameraPosition(
-                                        target = Position(latitude = place.lat, longitude = place.lon),
-                                        zoom = maxOf(cameraState.position.zoom, 14.0),
-                                    )
-                                )
+            interactions = MapInteractions {
+                callbacks {
+                    click {
+                        onEvent {
+                            if (uiState.selectedPlace != null) {
+                                viewModel.onPlaceDeselected()
+                                ClickResult.Consume
+                            } else {
+                                ClickResult.Pass
                             }
                         }
-                        ClickResult.Consume
-                    },
-                )
-            }
-
-            // Keep location available for navigation even when the puck is hidden.
-            locationState?.let { state ->
-                if (uiState.showUserLocation) {
-                    LocationPuck(
-                        idPrefix = "user",
-                        location = state.location,
-                        bearing = state.mostAccurateBearing(),
-                        cameraState = cameraState,
-                    )
+                    }
                 }
-            }
-        }
+            },
+        )
 
         // Search bar
         Column(
@@ -308,7 +319,7 @@ fun MapScreen(
                 onResultClick = { place ->
                     viewModel.onPlaceSelected(place)
                     coroutineScope.launch {
-                        cameraState.animateTo(
+                        mapState.animateCameraPosition(
                             CameraPosition(
                                 target = Position(latitude = place.lat, longitude = place.lon),
                                 zoom = 14.0,
@@ -374,9 +385,9 @@ fun MapScreen(
                 onClick = {
                     if (hasLocationPermission) {
                         coroutineScope.launch {
-                            val pos = locationState?.location?.position?.value
+                            val pos = locationState?.lastLocation?.position
                             if (pos != null) {
-                                cameraState.animateTo(CameraPosition(target = pos, zoom = 15.0))
+                                mapState.animateCameraPosition(CameraPosition(target = pos, zoom = 15.0))
                             }
                         }
                     } else {
@@ -467,7 +478,7 @@ fun MapScreen(
     if (showOfflineSheet) {
         OfflineCacheSheet(
             offlineManager = offlineManager,
-            currentZoom = cameraState.position.zoom,
+            currentZoom = mapState.cameraPosition.zoom,
             isCreatingPack = isCreatingOfflinePack,
             sheetState = offlineSheetState,
             onDismiss = { showOfflineSheet = false },
@@ -476,15 +487,17 @@ fun MapScreen(
                 coroutineScope.launch {
                     isCreatingOfflinePack = true
                     runCatching {
-                        val zoom = cameraState.position.zoom.toInt()
+                        val zoom = mapState.cameraPosition.zoom.toInt()
+                        val bounds = checkNotNull(mapState.viewport).visibleBounds.toBoundingBox()
                         val pack = offlineManager.create(
                             definition = OfflinePackDefinition.TilePyramid(
                                 styleUrl = styleUrl,
-                                bounds = cameraState.awaitProjection().queryVisibleBoundingBox(),
+                                bounds = bounds,
+                                pixelRatio = pixelRatio,
                                 minZoom = (zoom - 2).coerceAtLeast(0),
                                 maxZoom = (zoom + 2).coerceAtMost(16),
                             ),
-                            metadata = "离线区域 ${offlineManager.packs.size + 1}".encodeToByteArray(),
+                            metadata = "离线区域 ${offlinePacks.size + 1}".encodeToByteArray(),
                         )
                         offlineManager.resume(pack)
                     }.onFailure {

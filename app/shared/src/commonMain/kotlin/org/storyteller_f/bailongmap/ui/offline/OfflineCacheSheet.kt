@@ -23,6 +23,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +55,7 @@ fun OfflineCacheSheet(
     onError: (String) -> Unit,
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val packs by offlineManager.packs.collectAsState()
     val canDownload = currentZoom >= 8.0 && !isCreatingPack
 
     ModalBottomSheet(
@@ -109,7 +112,7 @@ fun OfflineCacheSheet(
 
             HorizontalDivider()
 
-            if (offlineManager.packs.isEmpty()) {
+            if (packs.isEmpty()) {
                 Text(
                     text = "暂无离线区域",
                     modifier = Modifier.padding(vertical = 12.dp),
@@ -121,7 +124,7 @@ fun OfflineCacheSheet(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(offlineManager.packs.toList(), key = { it.hashCode() }) { pack ->
+                    items(packs.toList(), key = { it.hashCode() }) { pack ->
                         OfflinePackRow(
                             pack = pack,
                             onPause = { offlineManager.pause(pack) },
@@ -147,11 +150,12 @@ private fun OfflinePackRow(
     onResume: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val progress = pack.downloadProgress
+    val progress by pack.downloadProgress.collectAsState()
+    val metadata by pack.metadata.collectAsState()
     val healthy = progress as? DownloadProgress.Healthy
     val fraction = healthy?.progressFraction()
     val isDownloading = healthy?.status == DownloadStatus.Downloading
-    val title = pack.metadata?.decodeToString()?.ifBlank { null } ?: "未命名区域"
+    val title = metadata?.decodeToString()?.ifBlank { null } ?: "未命名区域"
 
     Column(
         modifier = Modifier.fillMaxWidth(),
