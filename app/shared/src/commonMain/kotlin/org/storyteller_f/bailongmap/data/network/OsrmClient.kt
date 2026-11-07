@@ -32,11 +32,14 @@ internal data class OsrmGeometry(
 class OsrmClient(
     private val httpClient: HttpClient,
     private val baseUrl: String = "https://router.project-osrm.org",
+    private val mode: TravelMode = TravelMode.CAR,
+    private val beforeRequest: suspend () -> Unit = {},
 ) : JourneyPlanner {
     override suspend fun plans(
         origin: RoutePoint,
         destination: RoutePoint,
     ): List<JourneyPlan> {
+        beforeRequest()
         val coordinates =
             "${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}"
         val response: OsrmResponse =
@@ -47,11 +50,12 @@ class OsrmClient(
                 header("User-Agent", "BailongMap/1.0 (open-source map app)")
             }.body()
 
-        return listOf(response.toJourneyPlan())
+        return listOf(response.toJourneyPlan(mode))
     }
 }
 
-internal fun OsrmResponse.toJourneyPlan(): JourneyPlan {
+internal fun OsrmResponse.toJourneyPlan(mode: TravelMode = TravelMode.CAR): JourneyPlan {
+    require(mode in setOf(TravelMode.CAR,TravelMode.BICYCLE,TravelMode.WALK))
     check(code == "Ok") { "OSRM returned status $code" }
     val route = routes.firstOrNull() ?: error("OSRM returned no routes")
     val points = route.geometry.coordinates.map { coordinate ->
@@ -67,10 +71,10 @@ internal fun OsrmResponse.toJourneyPlan(): JourneyPlan {
         RoutePoint(latitude = latitude, longitude = longitude)
     }
     return JourneyPlan(
-        id = "osrm-driving",
+        id = "osrm-${mode.name.lowercase()}",
         legs = listOf(
             JourneyLeg(
-                mode = TravelMode.CAR,
+                mode = mode,
                 points = points,
                 distanceMeters = route.distance,
                 durationSeconds = route.duration,

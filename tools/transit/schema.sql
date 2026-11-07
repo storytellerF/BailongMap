@@ -1,0 +1,17 @@
+PRAGMA application_id = 1112298578;
+PRAGMA user_version = 3;
+PRAGMA foreign_keys = ON;
+CREATE TABLE metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE stops(id INTEGER PRIMARY KEY, name TEXT NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL, kind INTEGER NOT NULL, parent INTEGER REFERENCES stops(id) DEFERRABLE INITIALLY DEFERRED, access INTEGER NOT NULL);
+CREATE TABLE routes(id INTEGER PRIMARY KEY, name TEXT NOT NULL, mode INTEGER NOT NULL);
+CREATE TABLE services(id INTEGER PRIMARY KEY);
+CREATE TABLE service_dates(service INTEGER NOT NULL REFERENCES services(id), date TEXT NOT NULL, PRIMARY KEY(date,service));
+CREATE TABLE trips(id INTEGER PRIMARY KEY, route INTEGER NOT NULL REFERENCES routes(id), service INTEGER NOT NULL REFERENCES services(id), source_trip INTEGER NOT NULL, bikes_allowed INTEGER NOT NULL);
+CREATE TABLE connections(trip INTEGER NOT NULL REFERENCES trips(id), sequence INTEGER NOT NULL, origin INTEGER NOT NULL REFERENCES stops(id), destination INTEGER NOT NULL REFERENCES stops(id), departure INTEGER NOT NULL, arrival INTEGER NOT NULL, pickup INTEGER NOT NULL, dropoff INTEGER NOT NULL, PRIMARY KEY(trip,sequence));
+CREATE INDEX connections_departure ON connections(departure);
+CREATE INDEX trips_service ON trips(service);
+CREATE INDEX stops_coordinates ON stops(lat,lon);
+CREATE TABLE frequencies(id INTEGER PRIMARY KEY, trip INTEGER NOT NULL REFERENCES trips(id), start INTEGER NOT NULL, end INTEGER NOT NULL, headway INTEGER NOT NULL);
+CREATE TABLE footpaths(origin INTEGER NOT NULL REFERENCES stops(id), destination INTEGER NOT NULL REFERENCES stops(id), seconds INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY(origin,destination));
+CREATE TABLE transfer_rules(origin INTEGER NOT NULL REFERENCES stops(id), destination INTEGER NOT NULL REFERENCES stops(id), from_route INTEGER NOT NULL, from_trip INTEGER NOT NULL, to_route INTEGER NOT NULL, to_trip INTEGER NOT NULL, type INTEGER NOT NULL, seconds INTEGER NOT NULL);
+CREATE INDEX frequencies_trip ON frequencies(trip);

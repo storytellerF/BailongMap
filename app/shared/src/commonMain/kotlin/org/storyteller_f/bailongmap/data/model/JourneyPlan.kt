@@ -48,6 +48,7 @@ data class JourneyPlan(
     val id: String,
     val legs: List<JourneyLeg>,
     val durationSeconds: Double = legs.sumOf(JourneyLeg::durationSeconds),
+    val notice: String? = null,
 ) {
     init {
         require(id.isNotBlank()) { "Journey plan id must not be blank" }

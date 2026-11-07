@@ -55,7 +55,9 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.androidx.datastore.preferences)
+            implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.clientOkhttp)
+            implementation(files("libs/brouter-1.7.10-ro.jar"))
         }
         commonMain.dependencies {
             api(projects.core)

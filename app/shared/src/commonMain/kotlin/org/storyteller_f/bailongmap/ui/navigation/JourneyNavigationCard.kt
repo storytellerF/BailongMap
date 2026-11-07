@@ -76,6 +76,7 @@ fun JourneyNavigationCard(
                 }
             }
 
+            plan.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Text(
                 text = "当前阶段：${activeLeg.titleText()}",
                 style = MaterialTheme.typography.titleSmall,

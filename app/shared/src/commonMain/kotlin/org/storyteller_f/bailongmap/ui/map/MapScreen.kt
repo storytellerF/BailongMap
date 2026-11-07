@@ -96,6 +96,14 @@ import org.storyteller_f.bailongmap.ui.offline.OfflineHost
 import org.storyteller_f.bailongmap.ui.place.PlaceDetailSheet
 import org.storyteller_f.bailongmap.ui.search.SearchBarUi
 import org.storyteller_f.bailongmap.ui.settings.MapSettingsSheet
+import org.storyteller_f.bailongmap.data.transit.createTransitPackages
+import org.storyteller_f.bailongmap.data.transit.rememberTransitImportPicker
+import org.storyteller_f.bailongmap.ui.transit.TransitHost
+import org.storyteller_f.bailongmap.ui.transit.TransitSettings
+import org.storyteller_f.bailongmap.data.roads.createOfflineRoads
+import org.storyteller_f.bailongmap.data.roads.rememberRoadImportPicker
+import org.storyteller_f.bailongmap.ui.transit.RoadHost
+import org.storyteller_f.bailongmap.ui.transit.RoadSettings
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,6 +117,20 @@ fun MapScreen(
     viewModel: MapViewModel = viewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val transitHost = remember { TransitHost(createTransitPackages(), OfflineDispatchers.coordination) }
+    val transitState by transitHost.state.collectAsStateWithLifecycle()
+    val roadHost=remember { RoadHost(createOfflineRoads(),OfflineDispatchers.coordination) }
+    val roadState by roadHost.state.collectAsStateWithLifecycle()
+    val chooseRoads=rememberRoadImportPicker { roadHost.import(it) }
+    DisposableEffect(roadHost) { onDispose { roadHost.close() } }
+    val chooseTransit = rememberTransitImportPicker { transitHost.preview(it) }
+    DisposableEffect(transitHost) { onDispose { transitHost.close() } }
+    val transitLifecycle = LocalLifecycleOwner.current
+    LaunchedEffect(transitHost, transitLifecycle) {
+        transitLifecycle.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            transitHost.effects.collect(viewModel::showError)
+        }
+    }
     val coroutineScope = rememberCoroutineScope()
     val sheetState = rememberMapSheetState()
     val offlineSheetState = rememberMapSheetState()
@@ -426,6 +448,7 @@ fun MapScreen(
                 JourneyOptionsCard(
                     destination = destination,
                     plans = uiState.journeyPlans,
+                    groups = uiState.journeyGroups,
                     isLoading = uiState.isJourneyPlanning,
                     onSelect = viewModel::onJourneyPlanSelected,
                     onCancel = viewModel::onNavigationCancelled,
@@ -535,6 +558,10 @@ fun MapScreen(
             onShowOfflineRegionsChange = viewModel::onShowOfflineRegionsChange,
             onShowSearchMarkersChange = viewModel::onShowSearchMarkersChange,
             onShowUserLocationChange = viewModel::onShowUserLocationChange,
+            transitSettings = {
+                TransitSettings(transitState, chooseTransit, { transitHost.install() }, { transitHost.discard() }, { transitHost.remove() })
+                RoadSettings(roadState,chooseRoads)
+            },
         )
     }
 }

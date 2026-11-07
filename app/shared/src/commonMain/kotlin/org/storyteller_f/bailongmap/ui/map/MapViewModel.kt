@@ -20,11 +20,9 @@ import org.storyteller_f.bailongmap.data.model.FavoritePlace
 import org.storyteller_f.bailongmap.data.model.JourneyPlan
 import org.storyteller_f.bailongmap.data.model.Place
 import org.storyteller_f.bailongmap.data.model.RoutePoint
-import org.storyteller_f.bailongmap.data.network.JourneyPlanner
-import org.storyteller_f.bailongmap.data.network.NominatimClient
-import org.storyteller_f.bailongmap.data.network.OpenTripPlannerClient
-import org.storyteller_f.bailongmap.data.network.OsrmClient
-import org.storyteller_f.bailongmap.data.network.createHttpClient
+import org.storyteller_f.bailongmap.data.network.*
+import org.storyteller_f.bailongmap.data.model.TravelMode
+import org.storyteller_f.bailongmap.data.roads.createOfflineRoads
 import org.storyteller_f.bailongmap.data.settings.createMapSettingsStore
 import org.storyteller_f.bailongmap.platform.createPlaceShareService
 
@@ -48,6 +46,7 @@ data class MapUiState(
     val isSearchExpanded: Boolean = false,
     val navigationDestination: Place? = null,
     val journeyPlans: List<JourneyPlan> = emptyList(),
+    val journeyGroups: List<JourneyGroup> = emptyList(),
     val selectedJourneyPlan: JourneyPlan? = null,
     val activeJourneyLegIndex: Int = 0,
     val isJourneyPlanning: Boolean = false,
@@ -57,7 +56,16 @@ data class MapUiState(
 class MapViewModel : ViewModel() {
     private val httpClient = createHttpClient()
     private val nominatimClient = NominatimClient(httpClient)
-    private var journeyPlanner: JourneyPlanner = OsrmClient(httpClient)
+    private var onlineTransit: JourneyPlanner? = null
+    private val roads = createOfflineRoads()
+    private val driving = RoadJourneyPlanner(roads.planner(TravelMode.CAR), OsrmClient(httpClient))
+    private val cycling = RoadJourneyPlanner(roads.planner(TravelMode.BICYCLE), OsrmClient(httpClient,
+        baseUrl="https://routing.openstreetmap.de/routed-bike", mode=TravelMode.BICYCLE,
+        beforeRequest={ PublicRoadRequestGate.awaitTurn() }))
+    private val walking = RoadJourneyPlanner(roads.planner(TravelMode.WALK), OsrmClient(httpClient,
+        baseUrl="https://routing.openstreetmap.de/routed-foot", mode=TravelMode.WALK,
+        beforeRequest={ PublicRoadRequestGate.awaitTurn() }))
+    private val transitPackages = org.storyteller_f.bailongmap.data.transit.createTransitPackages()
     private val favoriteStore = createFavoriteStore()
     private val settingsStore = createMapSettingsStore()
     private val placeShareService = createPlaceShareService()
@@ -67,6 +75,7 @@ class MapViewModel : ViewModel() {
 
     private val searchQueryFlow = MutableStateFlow("")
     private var navigationJob: Job? = null
+    private var navigationGeneration = 0
 
     init {
         favoriteStore.favorites
@@ -158,59 +167,33 @@ class MapViewModel : ViewModel() {
 
     fun onNavigationRequested(origin: RoutePoint, destination: Place) {
         navigationJob?.cancel()
+        val generation = ++navigationGeneration
+        val options = JourneyOptionsPlanner(listOf(
+            JourneyProvider(JourneyCategory.CAR, driving, "暂未找到驾车路线，请检查道路覆盖或网络"),
+            JourneyProvider(JourneyCategory.BICYCLE, cycling, "暂未找到骑行路线，请检查道路覆盖或网络"),
+            JourneyProvider(JourneyCategory.TRANSIT,
+                TransitJourneyPlanner(transitPackages,walking,cycling,onlineTransit),
+                "暂无公共交通方案：请检查交通包的日期、线路覆盖和接驳道路数据"),
+            JourneyProvider(JourneyCategory.WALK, walking, "暂未找到步行路线，请检查道路覆盖或网络"),
+        ))
+        _uiState.update { it.copy(selectedPlace=null, navigationDestination=destination,
+            journeyPlans=emptyList(),journeyGroups=options.initial,selectedJourneyPlan=null,
+            activeJourneyLegIndex=0,isJourneyPlanning=true,error=null) }
         navigationJob = viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    selectedPlace = null,
-                    navigationDestination = destination,
-                    journeyPlans = emptyList(),
-                    selectedJourneyPlan = null,
-                    activeJourneyLegIndex = 0,
-                    isJourneyPlanning = true,
-                    error = null,
-                )
-            }
-            try {
-                val plans = journeyPlanner.plans(
-                    origin = origin,
-                    destination = RoutePoint(
-                        latitude = destination.lat,
-                        longitude = destination.lon,
-                    ),
-                )
-                _uiState.update {
-                    it.copy(
-                        journeyPlans = plans,
-                        selectedJourneyPlan = plans.singleOrNull(),
-                        activeJourneyLegIndex = 0,
-                        isJourneyPlanning = false,
-                    )
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                _uiState.update {
-                    it.copy(
-                        navigationDestination = null,
-                        journeyPlans = emptyList(),
-                        selectedJourneyPlan = null,
-                        activeJourneyLegIndex = 0,
-                        isJourneyPlanning = false,
-                        error = "行程规划失败，请检查路由服务或稍后重试",
-                    )
+            options.options(origin,RoutePoint(destination.lat,destination.lon)).collect { result ->
+                if (generation == navigationGeneration) _uiState.update { state ->
+                    val groups = state.journeyGroups.map { if (it.category==result.category) result else it }
+                    state.copy(journeyGroups=groups,
+                        journeyPlans=groups.flatMap { (it.availability as? JourneyAvailability.Available)?.plans.orEmpty() },
+                        isJourneyPlanning=groups.any { it.availability==JourneyAvailability.Planning })
                 }
             }
         }
     }
 
     internal fun configureJourneyPlanner(otpGraphQlUrl: String?) {
-        navigationJob?.cancel()
-        navigationJob = null
-        journeyPlanner = if (otpGraphQlUrl.isNullOrBlank()) {
-            OsrmClient(httpClient)
-        } else {
-            OpenTripPlannerClient(httpClient, otpGraphQlUrl)
-        }
+        onNavigationCancelled()
+        onlineTransit = otpGraphQlUrl?.takeIf { it.isNotBlank() }?.let { OpenTripPlannerClient(httpClient,it) }
     }
 
     fun onJourneyPlanSelected(planId: String) {
@@ -235,12 +218,14 @@ class MapViewModel : ViewModel() {
     }
 
     fun onNavigationCancelled() {
+        navigationGeneration++
         navigationJob?.cancel()
         navigationJob = null
         _uiState.update {
             it.copy(
                 navigationDestination = null,
                 journeyPlans = emptyList(),
+                journeyGroups = emptyList(),
                 selectedJourneyPlan = null,
                 activeJourneyLegIndex = 0,
                 isJourneyPlanning = false,

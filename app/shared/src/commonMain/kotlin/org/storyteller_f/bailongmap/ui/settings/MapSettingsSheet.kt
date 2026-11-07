@@ -38,6 +38,7 @@ fun MapSettingsSheet(
     onShowOfflineRegionsChange: (Boolean) -> Unit,
     onShowSearchMarkersChange: (Boolean) -> Unit,
     onShowUserLocationChange: (Boolean) -> Unit,
+    transitSettings: @Composable () -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -102,6 +103,8 @@ fun MapSettingsSheet(
 
             HorizontalDivider()
 
+            transitSettings()
+            HorizontalDivider()
             SectionTitle("数据源")
             Text(
                 text = "地图数据来自 OpenStreetMap，经 OpenFreeMap 样式与瓦片服务渲染；地点搜索使用 Nominatim。请避免短时间大量下载或自动批量请求。",
