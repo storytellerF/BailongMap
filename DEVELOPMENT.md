@@ -1,5 +1,3 @@
-<a id="development"></a>
-
 # 开发
 
 使用 JDK 21 和 Android SDK Platform 37.1 构建项目。更新后的 Compose 依赖要求 compile SDK 37.1；最低和目标 SDK 仍分别为 33 和 37。
@@ -21,8 +19,6 @@ Material3 迁移回归测试通过 Robolectric 运行，无需设备：`./gradle
 MapLibre Compose 使用 0.20.0。Android 应用通过 `maplibre-compose-runtime-opengl-android` 打包匹配的 OpenGL 运行时。仅有共享 API 依赖只会提供 JNI 桥接，缺少运行时会在启动时针对 `libmaplibre-native-c.so` 抛出 `UnsatisfiedLinkError`。按 [MapLibre 配置指南](https://maplibre.org/maplibre-compose/getting-started/) 保持 API 和运行时版本一致。相机命令使用 `CameraUpdate` 和 `CameraFit`，位置标记使用 `LocationIndicatorLayer`。离线 UI 观察 `OfflineStorage.state`，区分初始化加载、就绪和失败。`OfflineHost` 在注入的串行后台调度器上管理离线操作；页面释放时关闭它，并按生命周期收集状态和副作用。离线存储仅提供原生 API；共享 UI 当前针对 Android 构建。
 
 JS、Wasm 和 Kotlin Web 工具链依赖安装共用一个并发用户数为一的 Gradle build service。Windows 上并发安装时，Yarn Classic 的网络 mutex 可能在没有生成 `build/wasm/yarn.lock` 的情况下返回成功。此 service 只串行化依赖安装；编译和测试仍可并行，lockfile 验证继续启用。内置包管理器能够可靠处理并发安装后移除此限制。
-
-<a id="offline-transit-packages"></a>
 
 ## 离线交通包
 
@@ -58,8 +54,6 @@ python tools/transit/generate_demo.py build/transit-complex-demo.bltransit --dat
 
 版本 3 添加 GTFS 班次 `bikes_allowed`（0 未知、1 允许、2 禁止），在班次间隔展开时保留。旧包权限为未知。正式门到门查询向 `LocalTransitRouter` 提供道路接驳路段；直接时刻表 API 保留带标签的直线估算用于诊断。接驳时长决定能否赶上班次，也参与到达时间优化。站内换乘使用包中的 GTFS pathway 图。
 
-<a id="road-routing-and-journey-options"></a>
-
 ## 道路规划与行程方案
 
 `JourneyOptionsPlanner` 以独立超时和取消机制运行各提供方，结果立即更新对应分类。即使只有一个结果，UI 也要求明确选择。新请求取消旧请求，并在发布前检查代次。`RoadJourneyPlanner` 优先使用本地 BRouter，再使用同一方式的在线 OSRM 提供方。FOSSGIS 步行与骑行请求共享至少一秒的发起间隔。可选的自有自行车搜索失败或超时时，`TransitJourneyPlanner` 保留步行结果。该可选搜索与步行并行，自请求开始起有 12 秒预算，包含自行车权限检查；不能在步行结果较慢时额外再等这段时间。携带自行车要求每一班次都明确允许，不推断停放或租赁行为。
@@ -73,8 +67,6 @@ python tools/roads/generate_test_fixture.py /path/to/upstream-build
 ```
 
 生成的 `E100_N0.rd5` 是人工测试数据。`OfflineRoadsTest` 验证导入、持久化及内嵌引擎的三个 profile，包括汽车和自行车不能使用仅供步行的捷径。方案测试覆盖渐进结果、提供方隔离和取消；交通测试覆盖接驳成本和自行车权限。冻结的旧版交通夹具不得重新生成。
-
-<a id="transit-delivery-verification"></a>
 
 ## 交通交付验证
 
