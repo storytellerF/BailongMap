@@ -1,171 +1,104 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM), Server.
+这是一个面向 Android、iOS、Web、Desktop（JVM）和 Server 的 Kotlin Multiplatform 项目。
 
-See [Development](DEVELOPMENT.md) for build prerequisites and CI checks.
+构建前提与 CI 检查见 [开发说明](DEVELOPMENT.md)。
 
-### Features
+<a id="features"></a>
 
-- Search for places with OpenStreetMap Nominatim and show results on the map.
-- View place details, save favorites, and share place deep links.
-- Compare multiple journey options and navigate single- or multi-stage trips combining walking,
-  subway, bicycle, public transit, or driving.
-- Switch map styles and download the visible region for offline viewing.
+### 功能
 
-To plan a journey, open a search result, tap **导航**, grant location permission when prompted, and
-select one of the returned options. A multi-stage option shows the active stage, the next stage,
-transfer points, and a differently colored line for each travel mode.
+- 使用 OpenStreetMap Nominatim 搜索地点，并在地图上显示结果。
+- 查看地点详情、收藏地点并分享地点深链接。
+- 比较多种行程方案，为步行、地铁、自行车、公共交通或驾车组合的单阶段或多阶段行程导航。
+- 切换地图样式，下载可见区域以供离线查看。
 
-### Offline bus and subway data
+规划行程时，打开搜索结果，点击**导航**，在提示时授予位置权限，再选择返回的方案。多阶段方案会显示当前阶段、下一阶段、换乘点，以及按出行方式区分颜色的路线。
 
-Public transport can run locally on Android without a server:
+<a id="offline-bus-and-subway-data"></a>
 
-1. Ask an AI assistant to use the project skill
-   [bailongmap-transit](.agents/skills/bailongmap-transit/SKILL.md) with your verified
-   transit source material or GTFS ZIP.
-2. The assistant organizes GTFS and runs the project compiler to produce a
-   `.bltransit` package. Missing coordinates or schedules must be supplied, not invented.
-3. In the app, open **设置 → 离线公共交通 → 导入公共交通包**, select the package,
-   review its source, dates and counts, then tap **确认导入**.
-4. Navigation uses the installed timetable locally, including waiting time and
-   same-stop transfers. Importing replaces the active transit package. It persists
-   across app restarts; **移除公共交通包** returns planning to the existing online provider.
+### 离线公交与地铁数据
 
-To build without an AI assistant, use Python 3.10+ (a virtual environment is recommended):
+Android 可在没有服务器的情况下本地运行公共交通规划：
+
+1. 请 AI 助手使用项目 skill [bailongmap-transit](.agents/skills/bailongmap-transit/SKILL.md)，提供已经核实的交通数据源或 GTFS ZIP。
+2. 助手整理 GTFS，并运行项目编译器生成 `.bltransit` 包。缺失的坐标或时刻表必须补充，不能编造。
+3. 在应用中打开**设置 → 离线公共交通 → 导入公共交通包**，选择包，审阅来源、日期和数量，再点击**确认导入**。
+4. 导航在本地使用已安装时刻表，包括候车时间和同站换乘。导入会替换当前交通包，应用重启后仍保留；**移除公共交通包**会让规划恢复使用已有在线提供方。
+
+不使用 AI 助手时，可通过 Python 3.10+ 构建（建议使用虚拟环境）：
 
 ```shell
 python -m pip install -r tools/transit/requirements.txt
 python tools/transit/build_transit.py region-gtfs.zip region.bltransit --name "Region" --source "Data provider and license" --start 20261101 --end 20261130
 ```
 
-Use dates matching your actual source. The compiler checks references, service
-calendars, coordinates and times; remaps IDs; and builds a versioned SQLite database
-with indexes and a SHA-256 manifest. The app checks compatibility and integrity
-before allowing installation. Failed or cancelled imports preserve installed data.
-No OTP binary, OSM PBF file or server is needed for this workflow.
+日期应与实际数据源一致。编译器检查引用、服务日历、坐标和时间，重新映射 ID，并生成带索引、版本和 SHA-256 清单的 SQLite 数据库。应用在允许安装前检查兼容性与完整性。导入失败或取消时保留已安装数据。此流程无需 OTP 二进制、OSM PBF 文件或服务器。
 
-The skill now distinguishes compiling a file from verifying a usable delivery. It
-requires source/license evidence and reviewed GTFS validation, reports populated
-fields that the app omits, and runs declared journeys through the actual Android
-importer and offline planners. Full offline transit delivery also includes tested
-BRouter road segments. Packages with missing verification are labelled unverified;
-passing samples establish those journeys, not every possible trip or source fact.
-See [delivery verification](DEVELOPMENT.md#transit-delivery-verification) for the
-normal tools, usable without an AI assistant.
+Skill 现在区分“编译出文件”和“验证可用交付物”。它要求来源与许可证证据及已审阅的 GTFS 验证结果，报告源数据已填但应用省略的字段，并通过实际 Android 导入器和离线规划器运行声明的行程。完整离线交通交付还包括经过测试的 BRouter 道路分段。缺少验证的包标记为未验证；通过的样例只能证明对应行程，不能证明所有可能行程或源数据事实。无需 AI 助手也能使用的常规工具见[交付验证](DEVELOPMENT.md#transit-delivery-verification)。
 
-The current compiler produces version 3 packages; the app also accepts versions 1 and 2.
-It supports bus/subway, one timezone, up to 366 days of coverage, 50,000
-stop/location records and 250,000 consecutive-stop connections. Every stop needs explicit
-arrival/departure times (overnight times below 48:00:00 are supported). Calendar
-exceptions and pickup/drop-off prohibitions are preserved. Station, platform,
-entrance and boarding-area hierarchies are retained. Directed pathways use their
-traversal times (or walkway/gate length at 1.2 m/s); other pathway modes require
-explicit times. A station with a pathway graph is accessed through its entrances
-or explicitly accessible stops, so direct approach lines cannot bypass its graph.
-Without a graph, platform transfers within one station use estimated distances.
+当前编译器生成版本 3 的包，应用也接受版本 1 和 2。支持公交和地铁、单一时区，覆盖最多 366 天、50,000 条站点或位置记录，以及 250,000 条相邻站连接。每站必须提供明确的到达与出发时间（支持小于 48:00:00 的跨夜时间）。保留日历例外、禁止上下客规则，以及车站、站台、入口和上车区域的层次关系。有向 pathway 使用其通行时间，或按 1.2 m/s 将步道和闸机长度换算为时间；其他 pathway 模式必须明确提供时间。有 pathway 图的车站从入口或明确可接近的站点进入，直接接驳线不能绕过该图。没有图时，同站站台换乘使用估算距离。
 
-`frequencies.txt` with `exact_times=1` is expanded into distinct scheduled trips.
-For `exact_times=0`, the app budgets a full headway after reaching a boarding stop,
-checks the service window, and labels the result **间隔估算**. No fixed departure
-phase is invented. Transfer types 0–3, including forbidden/minimum-time rules and
-route/trip selectors, follow GTFS specificity. Ambiguous equal-priority rules are
-rejected. Types 4/5 (in-seat interlining), on-demand windows, continuous boarding,
-and multiple agency timezones remain unsupported and fail explicitly.
-The package limit is 32 MiB compressed and 128 MiB for the SQLite database.
+`frequencies.txt` 中 `exact_times=1` 会展开为独立的定时班次。对 `exact_times=0`，应用在到达上车站后预留完整班次间隔，检查服务窗口，并将结果标记为**间隔估算**，不编造固定发车相位。换乘类型 0–3，包括禁止换乘、最短时间规则和 route/trip 选择条件，遵循 GTFS 的具体性优先级；拒绝同优先级但含糊的规则。暂不支持类型 4/5（不下车续乘）、按需服务时间窗、连续上下客和多个运营机构时区，遇到这些输入会明确失败。压缩包最大 32 MiB，SQLite 数据库最大 128 MiB。
 
-The local planner searches boardings (including transfers) in the next 24 hours
-from the query time, including across midnight. Once boarded, the same vehicle may
-continue beyond that window; it is not a total journey-duration limit. It returns an earliest
-arrival option for scheduled services, or a conservative estimate for unscheduled
-headway services. Transfer minimum times are applied from the original alighting
-time, including walking through intermediate nodes; unspecified transfers use
-120 seconds. Staying aboard one trip needs no transfer allowance. Door-to-door
-planning routes approaches/exits along the street network, checking the two nearest
-accessible stops within 2 km for walking or 5 km for cycling at each end. This
-bounded search can miss a better or more distant boarding stop. Station paths use
-supplied traversal times; paths without geometry and transit lines remain schematic.
-A bicycle + transit + bicycle option means carrying your own bicycle, and requires
-GTFS `bikes_allowed=1` on every ridden trip. Unknown permission is not permission.
-Parking and shared-bike handoffs are not implemented.
-There are no live delays, fares or accessibility guarantees. Shapes are not used.
-Offline map tiles and online place search remain separate from timetable routing.
+本地规划器搜索从查询时间起未来 24 小时内的上车机会（含换乘），支持跨午夜。上车后同一车辆可继续行驶超过该窗口，因此它不是行程总时长上限。定时服务返回最早到达方案，非定时班次间隔服务返回保守估算。最短换乘时间从原始下车时刻计算，包含经过中间节点的步行；未指定的换乘默认 120 秒。同一班次内继续乘坐不需要换乘余量。门到门规划沿道路网络规划接驳和离开路段，在两端分别检查步行 2 km 或骑行 5 km 内最近的两个可接近站点。这个有界搜索可能遗漏更好或更远的上车站。站内路径使用数据源提供的通行时间；无几何信息的路径及交通线路仍为示意线。
 
-Without an installed transit package, the existing optional OpenTripPlanner GTFS
-GraphQL endpoint can still be configured at build time:
+自行车 + 公共交通 + 自行车方案表示携带自有自行车，要求每个乘坐班次都具有 GTFS `bikes_allowed=1`。未知权限不等于允许。尚未实现自行车停放和共享单车交接。没有实时延误、票价或无障碍保证，也不使用 shapes。离线地图瓦片和在线地点搜索与时刻表路径规划相互独立。
+
+未安装交通包时，仍可在构建时配置现有可选的 OpenTripPlanner GTFS GraphQL 端点：
 
 ```shell
 ./gradlew :app:androidApp:assembleDebug \
   -Pbailongmap.otpGraphQlUrl=https://your-otp.example/otp/gtfs/v1
 ```
 
-Driving, cycling, walking and public transit are independent choices. Available
-routes appear while other modes are still being calculated; a transit coverage or
-date miss is shown within the transit category. Choose a route explicitly to start.
-The optional OTP endpoint is used only for public transport when local planning
-finds no route.
+驾车、骑行、步行和公共交通是独立选项。其他方式仍在计算时，已可用的路线会先显示；交通覆盖范围或日期不匹配在公共交通分类内显示。必须明确选择路线才开始导航。只有本地规划未找到公共交通路线时，才使用可选 OTP 端点。
 
-### Offline roads
+<a id="offline-roads"></a>
 
-In **设置 → 离线道路 → 导入离线道路**, select all required standard BRouter
-`.rd5` segments together. Obtain them from the linked
-[BRouter segment directory](https://brouter.de/brouter/segments4/). Importing replaces
-the installed road region. The embedded BRouter engine calculates driving, cycling,
-and walking, including transit approaches, on the device. Downloaded map tiles are
-for display and do not replace routing data. Full offline planning needs both the
-road segments and a transit package covering the journey.
+### 离线道路
 
-When an offline road route is unavailable, the same mode can use an online OSRM
-service; results are marked **在线道路规划**. Driving uses the public OSRM demo;
-walking/cycling use [FOSSGIS routing](https://routing.openstreetmap.de/about.html),
-with shared request spacing of at least one second. These public services have
-usage limits and no availability guarantee. Credits: © OpenStreetMap contributors,
-OSRM, FOSSGIS and BRouter. Search and map downloads remain separate network services.
+在**设置 → 离线道路 → 导入离线道路**中，一次选择所需的全部标准 BRouter `.rd5` 分段。可从链接的 [BRouter 分段目录](https://brouter.de/brouter/segments4/) 获取。导入会替换已安装道路区域。内嵌 BRouter 引擎在设备上计算驾车、骑行和步行路线，包括公共交通接驳。下载的地图瓦片只用于显示，不能代替路径规划数据。完整离线规划同时需要覆盖行程的道路分段和交通包。
 
-* [/app/iosApp](./app/iosApp/iosApp) contains an iOS application. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+离线道路路线不可用时，可使用同一出行方式的在线 OSRM 服务，结果标记为**在线道路规划**。驾车使用公共 OSRM 演示服务；步行和骑行使用 [FOSSGIS routing](https://routing.openstreetmap.de/about.html)，共享至少一秒的请求发起间隔。这些公共服务有使用限制，不保证可用性。鸣谢：© OpenStreetMap contributors、OSRM、FOSSGIS 和 BRouter。搜索和地图下载仍是独立网络服务。
 
-* [/app/shared](./app/shared/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./app/shared/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./app/shared/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./app/shared/src/jvmMain/kotlin)
-    folder is the appropriate location.
+* [/app/iosApp](./app/iosApp/iosApp) 包含 iOS 应用。即使通过 Compose Multiplatform 共享 UI，iOS 应用仍需要此入口。项目的 SwiftUI 代码也应放在这里。
 
-* [/core](./core/src) is for the code that will be shared between all targets in the project.
-  The most important subfolder is [commonMain](./core/src/commonMain/kotlin). If preferred, you
-  can add code to the platform-specific folders here too.
+* [/app/shared](./app/shared/src) 存放 Compose Multiplatform 应用间共享的代码，包含以下子目录：
+  - [commonMain](./app/shared/src/commonMain/kotlin) 存放所有 target 通用的代码。
+  - 其他目录中的 Kotlin 代码只针对目录名所示的平台编译。例如，Kotlin 应用的 iOS 部分调用 Apple CoreCrypto 时，应放在 [iosMain](./app/shared/src/iosMain/kotlin)；修改 Desktop（JVM）专用部分时，应放在 [jvmMain](./app/shared/src/jvmMain/kotlin)。
 
-* [/server](./server/src/main/kotlin) is for the Ktor server application.
+* [/core](./core/src) 存放项目所有 target 之间共享的代码。最重要的子目录是 [commonMain](./core/src/commonMain/kotlin)，也可以按需在平台专用目录中添加代码。
 
-### Running the apps
+* [/server](./server/src/main/kotlin) 存放 Ktor 服务器应用。
 
-Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and options:
+<a id="running-the-apps"></a>
 
-- Android app (requires Android 13 / API 33 or newer):
-  `./gradlew :app:androidApp:assembleDebug`
-- Desktop app:
-  - Hot reload: `./gradlew :app:desktopApp:hotRun --auto`
-  - Standard run: `./gradlew :app:desktopApp:run`
-- Server: `./gradlew :server:run`
-- Web app:
-  - Wasm target (faster, modern browsers): `./gradlew :app:webApp:wasmJsBrowserDevelopmentRun`
-  - JS target (slower, supports older browsers): `./gradlew :app:webApp:jsBrowserDevelopmentRun`
-- iOS app: open the [/app/iosApp](./app/iosApp) directory in Xcode and run it from there.
+### 运行应用
 
-### Running tests
+使用 IDE 工具栏运行控件提供的配置，也可以使用以下命令和选项：
 
-Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
+- Android 应用（需要 Android 13 / API 33 或更新版本）：`./gradlew :app:androidApp:assembleDebug`。
+- 桌面应用：
+  - 热重载：`./gradlew :app:desktopApp:hotRun --auto`。
+  - 常规运行：`./gradlew :app:desktopApp:run`。
+- 服务器：`./gradlew :server:run`。
+- Web 应用：
+  - Wasm target（速度更快，面向现代浏览器）：`./gradlew :app:webApp:wasmJsBrowserDevelopmentRun`。
+  - JS target（速度较慢，支持旧浏览器）：`./gradlew :app:webApp:jsBrowserDevelopmentRun`。
+- iOS 应用：在 Xcode 中打开 [/app/iosApp](./app/iosApp) 并运行。
 
-- Android tests: `./gradlew :app:shared:testAndroidHostTest`
-- Server tests: `./gradlew :server:test`
+<a id="running-tests"></a>
 
-See [Development](DEVELOPMENT.md) for navigation end-to-end test setup and commands.
+### 运行测试
+
+使用 IDE 编辑器行号栏的运行按钮，或执行 Gradle 任务：
+
+- Android 测试：`./gradlew :app:shared:testAndroidHostTest`。
+- 服务器测试：`./gradlew :server:test`。
+
+导航端到端测试的环境配置和命令见[开发说明](DEVELOPMENT.md)。
 
 ---
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+进一步了解 [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)、[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform) 和 [Kotlin/Wasm](https://kotl.in/wasm/)……
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+欢迎在公开 Slack 频道 [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web) 反馈 Compose/Web 和 Kotlin/Wasm 的使用体验。遇到问题时，请在 [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP) 报告。
