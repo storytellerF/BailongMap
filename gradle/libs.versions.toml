@@ -1,5 +1,5 @@
 [versions]
-agp = "9.5.0"
+agp = "9.5.1"
 android-compileSdk = "37"
 android-compileSdkMinor = "1"
 android-minSdk = "33"
@@ -24,7 +24,7 @@ kotlinx-serialization = "1.12.0"
 ktor = "3.6.1"
 logback = "1.6.6"
 maplibre-compose = "0.20.0"
-material3 = "1.13.0-beta01"
+material3 = "1.13.0-beta02"
 slf4j = "2.0.20"
 testcontainers = "2.0.5"
 
