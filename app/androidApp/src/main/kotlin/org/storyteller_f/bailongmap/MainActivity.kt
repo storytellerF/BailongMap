@@ -34,10 +34,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         AndroidAppContext.initialize(this)
 
-        hasLocationPermission = ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
-        openedPlace = intent.toPlace()
+        hasLocationPermission = locationPermissionGranted()
+        openedPlace = if (savedInstanceState?.getBoolean("opened_place_consumed") == true) null else intent.toPlace()
         offlineTestStyleUrl = intent.toOfflineTestStyleUrl()
         otpGraphQlUrl = intent.toOtpTestGraphQlUrl() ?: configuredOtpGraphQlUrl()
 
@@ -59,6 +57,21 @@ class MainActivity : ComponentActivity() {
             )
         }
     }
+
+    override fun onResume() {
+        super.onResume()
+        hasLocationPermission = locationPermissionGranted()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("opened_place_consumed", openedPlace == null)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun locationPermissionGranted(): Boolean =
+        listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).any {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

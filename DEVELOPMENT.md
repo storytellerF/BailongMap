@@ -6,15 +6,17 @@
 
 Material3 迁移回归测试通过 Robolectric 运行，无需设备：`./gradlew :app:shared:testAndroidHostTest --tests '*MaterialMigrationTest'`。测试覆盖各地图面板初始独立隐藏状态、完全展开、关闭与重开、搜索结果选择和清空搜索词。三个地图面板共用 `rememberMapSheetState`，只允许 Hidden 和 Expanded。
 
+轻盈地图的导航状态由 `NavigationSession` 表示：Idle → Choosing → Active。Active 携带不可变模式和当前阶段，开始后不接受另一种模式或方案；结束后才能重新选择。`NavigationModeUiTest` 验证显式开始和详情弹窗不改变模式，`NavigationSessionTest` 验证阶段推进与锁定。沉浸相机从 ViewModel 持有的 `NavigationTrackingHost` 读取确认进度，投影和距离计算在注入的 worker 上执行，指南针不参与相机旋转。Host 在串行协调调度器上管理定位质量、30 秒有效期、路线游标与阶段到达事件；屏幕重建不会重置游标。`DirectedRoute` 在重叠与交叉点按已确认距离选择连续分支，不能仅以最近距离或最后线段判断到达。`RouteProgressTest` 与 `NavigationTrackingHostTest` 覆盖转弯、重复节点、折返闭环、交叉、过期定位及被新会话取代的后台结果。起点流程由 `OriginRequest` 与目的地一同替换，旧请求身份不能确认或取消新请求；规划与导航共用定位质量判定。所有地点入口统一由选中地点状态驱动相机聚焦。道路导入先审阅再确认，`RoadHostTest` 覆盖确认、取消和失败保留。
+
 调查 Gradle 兼容性警告时，运行 `./gradlew help --no-daemon --no-configuration-cache --warning-mode all -Dorg.gradle.deprecation.trace=true`（PowerShell 中将整个 `-D...` 参数加引号）。在 Gradle 9.8.1 下，AGP 9.3.1 内部调用已弃用的 `Configuration.setVisible`；Kotlin 2.4.21 的 Native 工具链在 `KotlinNativeBundleArtifactFormat` 中初始化已弃用的 `KotlinNativeBundleArtifactsTypes` 属性。这些问题分别需要在 Gradle 11 和 10 前由上游插件修复；保持警告可见，并在更新插件时复查。通用警告建议升级 Kotlin 到 2.1，但本项目已使用更新版本，因此此建议不能解决问题。
 
 无需设备或 Appium 服务器时，可运行 `./gradlew :appiumTests:compileTestKotlin --no-daemon` 验证 Appium 测试编译。Appium Java Client 11 的设备测试要求 Appium server 3 或更新版本。
 
 `PATH` 中有 `adb`、已连接 Android 设备且 Appium 服务器已启动时，运行 `./scripts/appium-test.sh -PappiumTags=navigation` 执行导航端到端测试。设置 `ANDROID_UDID` 时脚本使用该值，否则使用 `adb devices` 报告的第一个已连接设备。脚本先安装 debug APK，再运行测试，并向两次 Gradle 调用都转发命令行参数。安装失败立即停止，否则返回测试命令退出码。脚本不需要 AI 插件或设备锁辅助程序；AI 工具在外部管理共享设备锁。
 
-运行 `./scripts/appium-test.sh -PappiumTags=map-ui` 执行原生地图启动和底部面板回归测试。测试验证面板初始隐藏、通过返回操作和拖动关闭设置及离线面板，以及重开地点详情。`APP_PACKAGE` 和 `APP_ACTIVITY` 可指向独立安装的测试构建；Activity 命名空间与包名不同时，使用完整限定名。对已安装构建，运行 `:appiumTests:test -PappiumTags=map-ui` 并添加 `-x :app:androidApp:installDebug`，跳过覆盖安装。
+运行 `./scripts/appium-test.sh -PappiumTags=map-ui` 执行原生地图启动和底部面板回归测试。测试验证面板初始隐藏、通过返回操作和拖动关闭设置及离线面板，以及重开地点详情、链接消费后横竖屏重建保持手动起点、新链接替换旧目的地。`APP_PACKAGE` 和 `APP_ACTIVITY` 可指向独立安装的测试构建；Activity 命名空间与包名不同时，使用完整限定名。对已安装构建，运行 `:appiumTests:test -PappiumTags=map-ui` 并添加 `-x :app:androidApp:installDebug`，跳过覆盖安装。
 
-导航测试通过 ADB 注入模拟位置，选择步行—地铁—自行车三阶段方案，在换乘点推进，最后恢复真实位置。测试通过 `adb reverse` 使用本地地图样式和 OpenTripPlanner 夹具，不依赖互联网。
+导航测试分别选择预览和沉浸模式，通过 ADB 注入模拟位置，选择步行—地铁—自行车三阶段方案，验证横竖屏切换保持模式选择，显式开始导航后验证模式锁定，在换乘点推进，最后恢复真实位置。测试通过 `adb reverse` 使用本地地图样式和 OpenTripPlanner 夹具。交通方案不依赖互联网；道路分类仍可能请求配置的在线回退提供方。
 
 MapLibre Compose 使用 0.20.0。Android 应用通过 `maplibre-compose-runtime-opengl-android` 打包匹配的 OpenGL 运行时。仅有共享 API 依赖只会提供 JNI 桥接，缺少运行时会在启动时针对 `libmaplibre-native-c.so` 抛出 `UnsatisfiedLinkError`。按 [MapLibre 配置指南](https://maplibre.org/maplibre-compose/getting-started/) 保持 API 和运行时版本一致。相机命令使用 `CameraUpdate` 和 `CameraFit`，位置标记使用 `LocationIndicatorLayer`。离线 UI 观察 `OfflineStorage.state`，区分初始化加载、就绪和失败。`OfflineHost` 在注入的串行后台调度器上管理离线操作；页面释放时关闭它，并按生命周期收集状态和副作用。离线存储仅提供原生 API；共享 UI 当前针对 Android 构建。
 

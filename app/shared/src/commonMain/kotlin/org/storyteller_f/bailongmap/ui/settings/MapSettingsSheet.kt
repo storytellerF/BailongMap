@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.storyteller_f.bailongmap.data.settings.MapAppearance
 import org.storyteller_f.bailongmap.ui.map.MAP_STYLES
 import org.storyteller_f.bailongmap.ui.map.MapUiState
 
@@ -39,6 +40,7 @@ fun MapSettingsSheet(
     onShowSearchMarkersChange: (Boolean) -> Unit,
     onShowUserLocationChange: (Boolean) -> Unit,
     transitSettings: @Composable () -> Unit = {},
+    onAppearanceChange: (MapAppearance) -> Unit = {},
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -53,7 +55,19 @@ fun MapSettingsSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("设置", style = MaterialTheme.typography.titleLarge)
+            uiState.error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
 
+            Text("外观与地图", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SectionTitle("界面主题")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MapAppearance.entries.forEach { appearance ->
+                    androidx.compose.material3.FilterChip(
+                        selected = uiState.appearance == appearance,
+                        onClick = { onAppearanceChange(appearance) },
+                        label = { Text(appearance.label, style = MaterialTheme.typography.labelMedium) },
+                    )
+                }
+            }
             SectionTitle("默认地图样式")
             MAP_STYLES.forEachIndexed { index, (name, _) ->
                 Row(

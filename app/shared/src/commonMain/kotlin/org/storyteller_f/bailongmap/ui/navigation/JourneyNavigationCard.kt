@@ -1,5 +1,10 @@
 package org.storyteller_f.bailongmap.ui.navigation
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -39,10 +44,11 @@ fun JourneyNavigationCard(
     val activeLeg = plan.legs[activeIndex]
     val nextLeg = plan.legs.getOrNull(activeIndex + 1)
 
-    Card(modifier = modifier.fillMaxWidth()) {
+    Card(modifier = modifier.fillMaxWidth().heightIn(max = 380.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, top = 10.dp, end = 4.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -76,6 +82,7 @@ fun JourneyNavigationCard(
                 }
             }
 
+            Text("预览导航 · 本次模式已锁定", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             plan.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Text(
                 text = "当前阶段：${activeLeg.titleText()}",

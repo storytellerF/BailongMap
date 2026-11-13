@@ -267,7 +267,7 @@ internal class AndroidTransitPackages(private val context: android.content.Conte
         val stops = readStops(db)
         val routes = scalar("SELECT COUNT(*) FROM routes").toInt()
         require(stops.isNotEmpty() && routes > 0 && meta.getValue("name").isNotBlank() && meta.getValue("source").isNotBlank())
-        TransitPackageInfo(meta.getValue("name"), meta.getValue("source"), meta.getValue("start"), meta.getValue("end"), stops.size, routes)
+        TransitPackageInfo(meta.getValue("name"), meta.getValue("source"), meta.getValue("start"), meta.getValue("end"), stops.size, routes, meta.getValue("timezone"))
     }
 
     private fun readStops(db: SQLiteDatabase): Map<Int, TransitStop> = buildMap {
@@ -307,3 +307,6 @@ internal class AndroidTransitPackages(private val context: android.content.Conte
     }
     private val DATE = DateTimeFormatter.BASIC_ISO_DATE
 }
+
+actual fun currentServiceDate(timeZone: String): String =
+    java.time.LocalDate.now(java.time.ZoneId.of(timeZone)).format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)

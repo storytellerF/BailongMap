@@ -10,7 +10,7 @@ sealed interface TransitImportState {
     data object Working : TransitImportState
     data class Review(val info: TransitPackageInfo) : TransitImportState
 }
-data class TransitUiState(val installed: TransitPackageInfo? = null, val importing: TransitImportState = TransitImportState.Working)
+data class TransitUiState(val installed: TransitPackageInfo? = null, val importing: TransitImportState = TransitImportState.Working, val error: String? = null)
 
 /** Owns package-management actions independently of Compose and confines UI state to coordination. */
 class TransitHost(private val packages: TransitPackages, coordination: CoroutineDispatcher) {
@@ -39,11 +39,15 @@ class TransitHost(private val packages: TransitPackages, coordination: Coroutine
         if (mutable.value.importing == TransitImportState.Idle) perform { packages.remove() }
     }
     private suspend fun perform(action: suspend () -> Unit) {
-        mutable.value = mutable.value.copy(importing = TransitImportState.Working)
+        mutable.value = mutable.value.copy(importing = TransitImportState.Working, error = null)
         try {
             action()
         } catch (cancelled: CancellationException) { throw cancelled }
-        catch (_: Exception) { messages.send("公共交通数据操作失败：请检查文件格式、有效期和存储空间") }
+        catch (_: Exception) {
+            val message = "公共交通数据操作失败：请检查文件格式、有效期和存储空间"
+            mutable.value = mutable.value.copy(error = message)
+            messages.send(message)
+        }
         finally {
             if (mutable.value.importing == TransitImportState.Working) mutable.value = mutable.value.copy(importing = TransitImportState.Idle)
         }

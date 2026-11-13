@@ -8,7 +8,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Button
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.FlowRow
 import org.jetbrains.compose.resources.painterResource
 import bailongmap.app.shared.generated.resources.Res
 import bailongmap.app.shared.generated.resources.ic_favorite_border
@@ -46,6 +50,7 @@ fun PlaceDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 36.dp),
         ) {
@@ -61,17 +66,17 @@ fun PlaceDetailSheet(
             )
             if (place.type.isNotEmpty() || place.category.isNotEmpty()) {
                 Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (place.category.isNotEmpty()) {
-                        AssistChip(onClick = {}, label = { Text(place.category) })
+                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainer) { Text(place.category, Modifier.padding(8.dp), style = MaterialTheme.typography.labelMedium) }
                     }
                     if (place.type.isNotEmpty() && place.type != place.category) {
-                        AssistChip(onClick = {}, label = { Text(place.type) })
+                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainer) { Text(place.type, Modifier.padding(8.dp), style = MaterialTheme.typography.labelMedium) }
                     }
                 }
             }
             Spacer(Modifier.height(16.dp))
-            FilledTonalButton(
+            Button(
                 onClick = onNavigate,
                 modifier = Modifier.fillMaxWidth(),
             ) {

@@ -1,5 +1,6 @@
 package org.storyteller_f.bailongmap.appium
 
+import io.appium.java_client.AppiumBy
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.net.URLEncoder
@@ -9,18 +10,21 @@ import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Tag
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import org.openqa.selenium.ScreenOrientation
 
 @Tag("navigation")
 class NavigationTest : BaseAppiumTest() {
 
-    @Test
-    fun selectsAndNavigatesMultiStageJourneyFromAdbMockLocation() {
+    @ParameterizedTest
+    @ValueSource(strings = ["预览", "沉浸"])
+    fun selectsAndNavigatesMultiStageJourneyWithLockedMode(mode: String) {
         val routeRequested = AtomicBoolean(false)
         val routeServer = createRouteServer(routeRequested)
         routeServer.start()
         try {
-            assertTrue(waitForText("搜索地点"), "Map screen should be visible")
+            assertTrue(waitForText("想去哪里？"), "Map screen should be visible")
             setAdbMockLocation(
                 latitude = ORIGIN_LATITUDE,
                 longitude = ORIGIN_LONGITUDE,
@@ -44,7 +48,10 @@ class NavigationTest : BaseAppiumTest() {
 
             assertTrue(waitForText("导航测试终点"), "Destination details should be visible")
             findByText("导航").click()
-            findById(LOCATION_PERMISSION_ALLOW_BUTTON).click()
+            if (waitForText("从哪里出发？", Duration.ofSeconds(2))) {
+                findByText("使用当前位置").click()
+                findById(LOCATION_PERMISSION_ALLOW_BUTTON).click()
+            }
             setAdbMockLocation(
                 latitude = ORIGIN_LATITUDE,
                 longitude = ORIGIN_LONGITUDE,
@@ -54,9 +61,14 @@ class NavigationTest : BaseAppiumTest() {
                 waitForText("选择行程方案", Duration.ofSeconds(60)),
                 "Journey alternatives should be visible",
             )
+            findByText("公共交通").click()
             assertTrue(waitForText("方案 1 · 最快"), "Fastest journey should be labeled")
             assertTrue(waitForText("方案 2"), "Second journey alternative should be visible")
-            assertTrue(waitForText("方案 3"), "Third journey alternative should be visible")
+            driver.findElement(AppiumBy.androidUIAutomator(
+                """new UiScrollable(new UiSelector().scrollable(true)).scrollIntoView(new UiSelector().text("方案 3"))"""))
+            assertTrue(waitForText("方案 3"), "Third journey alternative should be reachable by scrolling")
+            driver.findElement(AppiumBy.androidUIAutomator(
+                """new UiScrollable(new UiSelector().scrollable(true)).scrollIntoView(new UiSelector().text("方案 1 · 最快"))"""))
             assertTrue(
                 waitForText("步行 → 地铁 → 自行车"),
                 "Multi-stage journey should list every travel mode",
@@ -64,10 +76,26 @@ class NavigationTest : BaseAppiumTest() {
             assertTrue(routeRequested.get(), "Local OTP fixture should receive the journey request")
 
             findByText("方案 1 · 最快").click()
+            assertTrue(waitForText("这次，怎样导航？"))
+            driver.rotate(ScreenOrientation.LANDSCAPE)
+            assertTrue(waitForText("这次，怎样导航？"), "Mode choice should survive screen recreation")
+            driver.rotate(ScreenOrientation.PORTRAIT)
+            assertTrue(waitForText("这次，怎样导航？"))
+            findByText("${mode}导航").click()
+            findByText("以${mode}模式开始导航").click()
+            assertTrue(waitForText("${mode}导航 · "), "Chosen mode should be locked for this session")
+            assertFalse(waitForText("以预览模式开始导航", Duration.ofSeconds(1)))
             assertTrue(waitForText("当前阶段：步行"), "Walking should be the first active leg")
             assertTrue(waitForText("第 1/3 段"), "First of three legs should be active")
-            assertTrue(waitForText("10 公里"), "Journey should show total distance")
-            assertTrue(waitForText("35 分钟"), "Journey should show total duration")
+            if (mode == "沉浸") {
+                findByText("行程信息").click()
+                assertTrue(waitForText("10 公里"), "Details should show total distance")
+                assertTrue(waitForText("35 分钟"), "Details should show total duration")
+                findByText("继续导航").click()
+            } else {
+                assertTrue(waitForText("10 公里"), "Journey should show total distance")
+                assertTrue(waitForText("35 分钟"), "Journey should show total duration")
+            }
 
             setAdbMockLocation(
                 latitude = SUBWAY_ORIGIN_LATITUDE,
@@ -87,12 +115,13 @@ class NavigationTest : BaseAppiumTest() {
                 "Reaching the subway endpoint should activate the bicycle leg",
             )
 
-            findByDescription("结束导航").click()
+            if (mode == "沉浸") findByText("结束导航").click() else findByDescription("结束导航").click()
             assertFalse(
                 waitForText("结束导航", Duration.ofSeconds(3)),
                 "Navigation summary should close",
             )
         } finally {
+            driver.rotate(ScreenOrientation.PORTRAIT)
             routeServer.stop(0)
         }
     }
@@ -170,7 +199,7 @@ class NavigationTest : BaseAppiumTest() {
                       "duration": 2700.0,
                       "legs": [
                         {
-                          "mode": "BICYCLE",
+                          "mode": "BUS",
                           "distance": 11000.0,
                           "duration": 2700.0,
                           "from": {"name": "出发点", "lat": 39.9042, "lon": 116.4074},

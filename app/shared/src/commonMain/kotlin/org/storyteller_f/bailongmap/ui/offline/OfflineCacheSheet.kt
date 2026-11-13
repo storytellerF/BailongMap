@@ -5,6 +5,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -55,10 +61,15 @@ fun OfflineCacheSheet(
     onPause: (OfflinePack) -> Unit,
     onResume: (OfflinePack) -> Unit,
     onDelete: (OfflinePack) -> Unit,
+    dataSettings: @Composable () -> Unit = {},
+    errorMessage: String? = null,
 ) {
     val storageState by offlineStorage.state.collectAsStateWithLifecycle()
     val packs = (storageState as? OfflineStorageState.Ready)?.packs.orEmpty()
     val canDownload = currentZoom >= 8.0 && !isCreatingPack && storageState is OfflineStorageState.Ready
+
+    var deleteTarget by remember { mutableStateOf<OfflinePack?>(null) }
+    var clearRequested by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -67,17 +78,23 @@ fun OfflineCacheSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("离线地图", style = MaterialTheme.typography.titleLarge)
+            Text("离线中心", style = MaterialTheme.typography.titleLarge)
             Text(
-                text = "下载当前屏幕可见区域，后续无网络时可直接打开已缓存区域。",
+                text = "地图、道路和公共交通数据分别管理。地图用于显示，道路用于算路，交通包用于查询班次与换乘。",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            errorMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            dataSettings()
+            HorizontalDivider()
+            Text("地图瓦片", style = MaterialTheme.typography.titleMedium)
+            Text("下载当前地图可见区域；下载地图不会自动安装道路与交通数据。", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onDownloadVisibleRegion,
@@ -93,7 +110,7 @@ fun OfflineCacheSheet(
                     Text(if (isCreatingPack) "创建中" else "下载当前区域")
                 }
                 OutlinedButton(
-                    onClick = onClearCache,
+                    onClick = { clearRequested = true },
                     enabled = storageState is OfflineStorageState.Ready,
                 ) {
                     Text("清理缓存")
@@ -124,7 +141,7 @@ fun OfflineCacheSheet(
                 )
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(packs.toList(), key = { it.hashCode() }) { pack ->
@@ -132,13 +149,21 @@ fun OfflineCacheSheet(
                             pack = pack,
                             onPause = { onPause(pack) },
                             onResume = { onResume(pack) },
-                            onDelete = { onDelete(pack) },
+                            onDelete = { deleteTarget = pack },
                         )
                     }
                 }
             }
         }
     }
+    if (clearRequested) AlertDialog(onDismissRequest = { clearRequested = false },
+        title = { Text("清理自动缓存？") }, text = { Text("只清理自动缓存；已下载的离线区域单独保留。") },
+        confirmButton = { TextButton(onClick = { clearRequested = false; onClearCache() }) { Text("确认清理") } },
+        dismissButton = { TextButton(onClick = { clearRequested = false }) { Text("取消") } })
+    deleteTarget?.let { target -> AlertDialog(onDismissRequest = { deleteTarget = null },
+        title = { Text("删除离线区域？") }, text = { Text("删除后，此区域需要重新下载才能离线查看。") },
+        confirmButton = { TextButton(onClick = { deleteTarget = null; onDelete(target) }) { Text("确认删除") } },
+        dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("取消") } }) }
 }
 
 @Composable
@@ -179,7 +204,7 @@ private fun OfflinePackRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(onClick = if (isDownloading) onPause else onResume) {
+            if (healthy?.status != DownloadStatus.Complete) IconButton(onClick = if (isDownloading) onPause else onResume) {
                 Icon(
                     painterResource(if (isDownloading) Res.drawable.ic_pause else Res.drawable.ic_play),
                     contentDescription = if (isDownloading) "暂停下载" else "继续下载",

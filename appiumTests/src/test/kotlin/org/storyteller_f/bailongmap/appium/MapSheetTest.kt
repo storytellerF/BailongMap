@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.openqa.selenium.interactions.PointerInput
+import org.openqa.selenium.ScreenOrientation
 import org.openqa.selenium.interactions.Sequence
 import org.openqa.selenium.support.ui.ExpectedConditions
 
@@ -15,25 +16,25 @@ import org.openqa.selenium.support.ui.ExpectedConditions
 class MapSheetTest : BaseAppiumTest() {
     @Test
     fun startsNativeMapWithAllSheetsHidden() {
-        assertTrue(waitForText("搜索地点"), "Native map screen should start without a linker crash")
+        assertTrue(waitForText("想去哪里？"), "Native map screen should start without a linker crash")
         findByDescription("Map")
         assertTrue(driver.findElements(AppiumBy.accessibilityId("Drag handle")).isEmpty())
         findByDescription("设置")
-        findByDescription("离线地图")
+        findByText("离线")
     }
 
     @ParameterizedTest
     @ValueSource(strings = ["设置", "离线地图"])
     fun mapSheetClosesWithBackAndReopensThenDismissesByDragging(description: String) {
-        val content = if (description == "设置") "默认地图样式" else "下载当前区域"
-        assertTrue(waitForText("搜索地点"))
+        val content = if (description == "设置") "默认地图样式" else "离线中心"
+        assertTrue(waitForText("想去哪里？"))
 
-        findByDescription(description).click()
+        openSheet(description)
         assertTrue(waitForText(content), "Sheet content should be visible")
         driver.navigate().back()
         waitForSheetDismissed()
 
-        findByDescription(description).click()
+        openSheet(description)
         assertTrue(waitForText(content), "Sheet should reopen")
         dismissByDraggingHandle()
         waitForSheetDismissed()
@@ -42,7 +43,7 @@ class MapSheetTest : BaseAppiumTest() {
 
     @Test
     fun placeDetailsCloseAndReopenForTheSamePlace() {
-        assertTrue(waitForText("搜索地点"))
+        assertTrue(waitForText("想去哪里？"))
         val placeUrl = "bailongmap://place?lat=0&lon=0&name=SheetTest&address=TestAddress"
 
         repeat(2) {
@@ -53,6 +54,34 @@ class MapSheetTest : BaseAppiumTest() {
             driver.navigate().back()
             waitForSheetDismissed()
         }
+    }
+
+    @Test
+    fun consumedPlaceLinkDoesNotReplaceManualOriginAfterScreenRecreation() {
+        assertTrue(waitForText("想去哪里？"))
+        startDeepLink("bailongmap://place?lat=0&lon=0&name=OriginTest&address=TestAddress")
+        assertTrue(waitForText("OriginTest"))
+        findByText("导航").click()
+        assertTrue(waitForText("从哪里出发？"))
+        findByText("手动选择起点").click()
+        assertTrue(waitForText("选择路线起点"))
+        try {
+            driver.rotate(ScreenOrientation.LANDSCAPE)
+            assertTrue(waitForText("选择路线起点"), "Consumed link must not replay on recreation")
+            driver.rotate(ScreenOrientation.PORTRAIT)
+            assertTrue(waitForText("使用这个起点"))
+            startDeepLink("bailongmap://place?lat=1&lon=1&name=Replacement&address=NewAddress")
+            assertTrue(waitForText("Replacement"), "A new intent should still open a new place")
+            driver.navigate().back()
+            wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                AppiumBy.androidUIAutomator("""new UiSelector().text("选择路线起点")""")))
+        } finally {
+            driver.rotate(ScreenOrientation.PORTRAIT)
+        }
+    }
+
+    private fun openSheet(description: String) {
+        if (description == "设置") findByDescription(description).click() else findByText("离线").click()
     }
 
     private fun waitForSheetDismissed() {
